@@ -179,6 +179,10 @@ impl StoryTiles {
                     height: px(480.),
                 }),
                 kind: WindowKind::Normal,
+                #[cfg(target_os = "linux")]
+                window_background: gpui::WindowBackgroundAppearance::Transparent,
+                #[cfg(target_os = "linux")]
+                window_decorations: Some(gpui::WindowDecorations::Client),
                 ..Default::default()
             };
 
@@ -218,8 +222,12 @@ impl Render for StoryTiles {
         let drawer_layer = Root::render_drawer_layer(cx);
         let modal_layer = Root::render_modal_layer(cx);
         let notification_layer = Root::render_notification_layer(cx);
+        let is_linux = cfg!(target_os = "linux");
 
         div()
+            .when(is_linux, |this| {
+                this.border_1().border_color(cx.theme().border)
+            })
             .font_family(".SystemUIFont")
             .relative()
             .size_full()
