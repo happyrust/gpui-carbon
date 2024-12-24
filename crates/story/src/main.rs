@@ -451,13 +451,9 @@ impl Render for StoryWorkspace {
         let notification_layer = Root::render_notification_layer(cx);
         let notifications_count = cx.notifications().len();
         let invisible_panels = AppState::global(cx).invisible_panels.clone();
-        let is_linux = cfg!(target_os = "linux");
 
         div()
             .id("story-workspace")
-            .when(is_linux, |this| {
-                this.border_1().border_color(cx.theme().border)
-            })
             .on_action(cx.listener(Self::on_action_add_panel))
             .on_action(cx.listener(Self::on_action_toggle_panel_visible))
             .relative()

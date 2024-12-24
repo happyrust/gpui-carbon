@@ -6,8 +6,10 @@ use gpui::{
     Point, RenderOnce, ResizeEdge, Size, Styled as _, WindowContext,
 };
 
+use crate::theme::ActiveTheme;
+
 const SHADOW_SIZE: Pixels = Pixels(12.0);
-const BORDER_SIZE: Pixels = Pixels(0.0);
+const BORDER_SIZE: Pixels = Pixels(1.0);
 pub(crate) const BORDER_RADIUS: Pixels = Pixels(0.0);
 
 /// Create a new window border.
@@ -120,6 +122,7 @@ impl RenderOnce for WindowBorder {
                             .when(!(tiling.top || tiling.left), |div| {
                                 div.rounded_tl(BORDER_RADIUS)
                             })
+                            .border_color(cx.theme().window_border)
                             .when(!tiling.top, |div| div.border_t(BORDER_SIZE))
                             .when(!tiling.bottom, |div| div.border_b(BORDER_SIZE))
                             .when(!tiling.left, |div| div.border_l(BORDER_SIZE))
