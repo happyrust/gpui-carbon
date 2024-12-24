@@ -28,8 +28,8 @@ pub fn init(cx: &mut AppContext) {
 #[derive(IntoElement)]
 pub struct Drawer {
     pub(crate) focus_handle: FocusHandle,
-    placement: Placement,
-    size: DefiniteLength,
+    pub(crate) placement: Placement,
+    pub(crate) size: DefiniteLength,
     resizable: bool,
     on_close: Rc<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>,
     title: Option<AnyElement>,
@@ -79,17 +79,6 @@ impl Drawer {
     pub fn margin_top(mut self, top: Pixels) -> Self {
         self.margin_top = top;
         self
-    }
-
-    /// Sets the placement of the drawer, default is `Placement::Right`.
-    pub fn placement(mut self, placement: Placement) -> Self {
-        self.placement = placement;
-        self
-    }
-
-    /// Sets the placement of the drawer, default is `Placement::Right`.
-    pub fn set_placement(&mut self, placement: Placement) {
-        self.placement = placement;
     }
 
     /// Sets whether the drawer is resizable, default is `true`.
