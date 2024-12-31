@@ -7,6 +7,7 @@ use std::{
 
 use crate::{
     h_flex,
+    history::{History, HistoryItem},
     scroll::{Scrollbar, ScrollbarState},
     theme::ActiveTheme,
     v_flex, Icon, IconName,
@@ -14,16 +15,38 @@ use crate::{
 
 use super::{DockArea, Panel, PanelEvent, PanelInfo, PanelState, PanelView, TabPanel, TileMeta};
 use gpui::{
-    canvas, div, point, px, size, AnyElement, AppContext, Bounds, DismissEvent, DragMoveEvent,
-    Entity, EntityId, EventEmitter, FocusHandle, FocusableView, Half, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
-    ScrollHandle, Size, StatefulInteractiveElement, Styled, ViewContext, VisualContext, WeakView,
-    WindowContext,
+    actions, canvas, div, point, px, size, AnyElement, AppContext, Bounds, DismissEvent,
+    DragMoveEvent, Entity, EntityId, EventEmitter, FocusHandle, FocusableView, Half,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ParentElement,
+    Pixels, Point, Render, ScrollHandle, Size, StatefulInteractiveElement, Styled, ViewContext,
+    VisualContext, WeakView, WindowContext,
 };
+
+actions!(tiles, [Undo, Redo,]);
 
 const MINIMUM_SIZE: Size<Pixels> = size(px(100.), px(100.));
 const DRAG_BAR_HEIGHT: Pixels = px(30.);
 const HANDLE_SIZE: Pixels = px(20.0);
+
+#[derive(Clone, Debug)]
+struct TileChange {
+    tile_id: EntityId,
+    old_bounds: Option<Bounds<Pixels>>,
+    new_bounds: Option<Bounds<Pixels>>,
+    old_order: Option<usize>,
+    new_order: Option<usize>,
+    version: usize,
+}
+
+impl HistoryItem for TileChange {
+    fn version(&self) -> usize {
+        self.version
+    }
+
+    fn set_version(&mut self, version: usize) {
+        self.version = version;
+    }
+}
 
 #[derive(Clone, Render)]
 pub struct DragMoving(EntityId);
@@ -87,7 +110,7 @@ pub struct Tiles {
     resizing_index: Option<usize>,
     resizing_drag_data: Option<ResizeDrag>,
     bounds: Bounds<Pixels>,
-
+    history: History<TileChange>,
     scroll_state: Rc<Cell<ScrollbarState>>,
     scroll_handle: ScrollHandle,
 }
@@ -136,6 +159,7 @@ impl Tiles {
             resizing_index: None,
             resizing_drag_data: None,
             bounds: Bounds::default(),
+            history: History::new().group_interval(std::time::Duration::from_millis(100)),
             scroll_state: Rc::new(Cell::new(ScrollbarState::default())),
             scroll_handle: ScrollHandle::default(),
         }
@@ -184,14 +208,30 @@ impl Tiles {
             return;
         };
 
+        let previous_bounds = item.bounds;
         let adjusted_position = pos - self.bounds.origin;
         let delta = adjusted_position - self.dragging_initial_mouse;
-        let mut new_origin = self.dragging_initial_bounds.origin + delta;
+        let new_origin = self.dragging_initial_bounds.origin + delta;
 
-        new_origin.x = new_origin.x.max(px(0.0));
-        new_origin.y = new_origin.y.max(px(0.0));
+        let final_origin = round_point_to_nearest_ten(new_origin);
 
-        item.bounds.origin = round_point_to_nearest_ten(new_origin);
+        // Only push to history if bounds have changed
+        if final_origin != previous_bounds.origin {
+            item.bounds.origin = final_origin;
+
+            // Only push if not during history operations
+            if !self.history.ignore {
+                self.history.push(TileChange {
+                    tile_id: item.panel.view().entity_id(),
+                    old_bounds: Some(previous_bounds),
+                    new_bounds: Some(item.bounds),
+                    old_order: None,
+                    new_order: None,
+                    version: 0,
+                });
+            }
+        }
+
         cx.notify();
     }
 
@@ -206,7 +246,26 @@ impl Tiles {
     fn resize_width(&mut self, new_width: Pixels, cx: &mut ViewContext<'_, Self>) {
         if let Some(index) = self.resizing_index {
             if let Some(item) = self.panels.get_mut(index) {
-                item.bounds.size.width = round_to_nearest_ten(new_width);
+                let previous_bounds = item.bounds;
+                let final_width = round_to_nearest_ten(new_width);
+
+                // Only push to history if width has changed
+                if final_width != item.bounds.size.width {
+                    item.bounds.size.width = final_width;
+
+                    // Only push if not during history operations
+                    if !self.history.ignore {
+                        self.history.push(TileChange {
+                            tile_id: item.panel.view().entity_id(),
+                            old_bounds: Some(previous_bounds),
+                            new_bounds: Some(item.bounds),
+                            old_order: None,
+                            new_order: None,
+                            version: 0,
+                        });
+                    }
+                }
+
                 cx.notify();
             }
         }
@@ -215,7 +274,26 @@ impl Tiles {
     fn resize_height(&mut self, new_height: Pixels, cx: &mut ViewContext<'_, Self>) {
         if let Some(index) = self.resizing_index {
             if let Some(item) = self.panels.get_mut(index) {
-                item.bounds.size.height = round_to_nearest_ten(new_height);
+                let previous_bounds = item.bounds;
+                let final_height = round_to_nearest_ten(new_height);
+
+                // Only push to history if height has changed
+                if final_height != item.bounds.size.height {
+                    item.bounds.size.height = final_height;
+
+                    // Only push if not during history operations
+                    if !self.history.ignore {
+                        self.history.push(TileChange {
+                            tile_id: item.panel.view().entity_id(),
+                            old_bounds: Some(previous_bounds),
+                            new_bounds: Some(item.bounds),
+                            old_order: None,
+                            new_order: None,
+                            version: 0,
+                        });
+                    }
+                }
+
                 cx.notify();
             }
         }
@@ -282,11 +360,72 @@ impl Tiles {
                 let item = self.panels.remove(old_index);
                 self.panels.push(item);
                 let new_index = self.panels.len() - 1;
-                self.reset_current_index();
+                self.history.push(TileChange {
+                    tile_id: self.panels[new_index].panel.view().entity_id(),
+                    old_bounds: None,
+                    new_bounds: None,
+                    old_order: Some(old_index),
+                    new_order: Some(new_index),
+                    version: 0,
+                });
                 return Some((old_index, new_index));
             }
         }
         None
+    }
+
+    /// Handle the undo action
+    pub fn undo(&mut self, cx: &mut ViewContext<Self>) {
+        self.history.ignore = true;
+
+        if let Some(changes) = self.history.undo() {
+            for change in changes {
+                if let Some(index) = self
+                    .panels
+                    .iter()
+                    .position(|item| item.panel.view().entity_id() == change.tile_id)
+                {
+                    if let Some(old_bounds) = change.old_bounds {
+                        self.panels[index].bounds = old_bounds;
+                    }
+                    if let Some(old_order) = change.old_order {
+                        let item = self.panels.remove(index);
+                        self.panels.insert(old_order, item);
+                    }
+                }
+            }
+            cx.emit(PanelEvent::LayoutChanged);
+        }
+
+        self.history.ignore = false;
+        cx.notify();
+    }
+
+    /// Handle the redo action
+    pub fn redo(&mut self, cx: &mut ViewContext<Self>) {
+        self.history.ignore = true;
+
+        if let Some(changes) = self.history.redo() {
+            for change in changes {
+                if let Some(index) = self
+                    .panels
+                    .iter()
+                    .position(|item| item.panel.view().entity_id() == change.tile_id)
+                {
+                    if let Some(new_bounds) = change.new_bounds {
+                        self.panels[index].bounds = new_bounds;
+                    }
+                    if let Some(new_order) = change.new_order {
+                        let item = self.panels.remove(index);
+                        self.panels.insert(new_order, item);
+                    }
+                }
+            }
+            cx.emit(PanelEvent::LayoutChanged);
+        }
+
+        self.history.ignore = false;
+        cx.notify();
     }
 
     /// Produce a vector of AnyElement representing the three possible resize handles
@@ -600,6 +739,66 @@ impl Tiles {
             .children(self.render_resize_handles(cx, entity_id, &item, &is_occluded))
             .child(self.render_drag_bar(cx, entity_id, &item, &is_occluded))
     }
+
+    /// Handle the mouse up event to finalize drag or resize operations
+    fn on_mouse_up(&mut self, cx: &mut ViewContext<'_, Tiles>) {
+        // Check if a drag or resize was active
+        if self.dragging_index.is_some()
+            || self.resizing_index.is_some()
+            || self.resizing_drag_data.is_some()
+        {
+            let mut changes_to_push = vec![];
+
+            // Handle dragging
+            if let Some(index) = self.dragging_index {
+                let initial_bounds = self.dragging_initial_bounds;
+                let current_bounds = self.panels[index].bounds;
+                if initial_bounds.origin != current_bounds.origin
+                    || initial_bounds.size != current_bounds.size
+                {
+                    changes_to_push.push(TileChange {
+                        tile_id: self.panels[index].panel.view().entity_id(),
+                        old_bounds: Some(initial_bounds),
+                        new_bounds: Some(current_bounds),
+                        old_order: None,
+                        new_order: None,
+                        version: 0,
+                    });
+                }
+            }
+
+            // Handle resizing
+            if let Some(index) = self.resizing_index {
+                if let Some(drag_data) = &self.resizing_drag_data {
+                    let initial_bounds = drag_data.last_bounds;
+                    let current_bounds = self.panels[index].bounds;
+                    if initial_bounds.size != current_bounds.size {
+                        changes_to_push.push(TileChange {
+                            tile_id: self.panels[index].panel.view().entity_id(),
+                            old_bounds: Some(initial_bounds),
+                            new_bounds: Some(current_bounds),
+                            old_order: None,
+                            new_order: None,
+                            version: 0,
+                        });
+                    }
+                }
+            }
+
+            // Push changes to history if any
+            if !changes_to_push.is_empty() {
+                for change in changes_to_push {
+                    self.history.push(change);
+                }
+            }
+
+            // Reset drag and resize state
+            self.reset_current_index();
+            self.resizing_drag_data = None;
+            cx.emit(PanelEvent::LayoutChanged);
+            cx.notify();
+        }
+    }
 }
 
 #[inline]
@@ -666,15 +865,7 @@ impl Render for Tiles {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |this, _event: &MouseUpEvent, cx| {
-                    if this.dragging_index.is_some()
-                        || this.resizing_index.is_some()
-                        || this.resizing_drag_data.is_some()
-                    {
-                        this.reset_current_index();
-                        this.resizing_drag_data = None;
-                        cx.emit(PanelEvent::LayoutChanged);
-                        cx.notify();
-                    }
+                    this.on_mouse_up(cx);
                 }),
             )
             .on_mouse_down(
