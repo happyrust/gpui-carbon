@@ -13,8 +13,8 @@ use crate::{
 use gpui::{
     actions, canvas, deferred, div, prelude::FluentBuilder, px, uniform_list, AppContext, Axis,
     Bounds, Div, DragMoveEvent, Edges, Entity, EntityId, EventEmitter, FocusHandle, FocusableView,
-    InteractiveElement, IntoElement, KeyBinding, ListSizingBehavior, MouseButton, ParentElement,
-    Pixels, Point, Render, ScrollHandle, ScrollStrategy, SharedString, Stateful,
+    InteractiveElement, IntoElement, KeyBinding, ListSizingBehavior, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, Render, ScrollHandle, ScrollStrategy, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, UniformListScrollHandle, ViewContext,
     VisualContext as _, WindowContext,
 };
@@ -102,7 +102,10 @@ enum SelectionState {
 
 #[derive(Clone)]
 pub enum TableEvent {
+    /// Single click or move to selected row.
     SelectRow(usize),
+    /// Double click on the row.
+    DoubleClickedRow(usize),
     SelectCol(usize),
     ColWidthsChanged(Vec<Pixels>),
     MoveCol(usize, usize),
@@ -407,16 +410,15 @@ where
         cx.notify();
     }
 
-    fn on_row_click(
-        &mut self,
-        mouse_button: MouseButton,
-        row_ix: usize,
-        cx: &mut ViewContext<Self>,
-    ) {
-        if mouse_button == MouseButton::Right {
+    fn on_row_click(&mut self, ev: &MouseDownEvent, row_ix: usize, cx: &mut ViewContext<Self>) {
+        if ev.button == MouseButton::Right {
             self.right_clicked_row = Some(row_ix);
         } else {
-            self.set_selected_row(row_ix, cx)
+            self.set_selected_row(row_ix, cx);
+
+            if ev.click_count == 2 {
+                cx.emit(TableEvent::DoubleClickedRow(row_ix));
+            }
         }
     }
 
@@ -987,12 +989,6 @@ where
         if row_ix < rows_count {
             self.delegate
                 .render_tr(row_ix, cx)
-                .context_menu({
-                    let view = view.clone();
-                    move |this, cx: &mut ViewContext<PopupMenu>| {
-                        view.read(cx).delegate.context_menu(row_ix, this, cx)
-                    }
-                })
                 .w_full()
                 .h(self.size.table_row_height())
                 .border_b_1()
@@ -1084,14 +1080,14 @@ where
                 })
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(move |this, _, cx| {
-                        this.on_row_click(MouseButton::Left, row_ix, cx);
+                    cx.listener(move |this, ev, cx| {
+                        this.on_row_click(ev, row_ix, cx);
                     }),
                 )
                 .on_mouse_down(
                     MouseButton::Right,
-                    cx.listener(move |this, _, cx| {
-                        this.on_row_click(MouseButton::Right, row_ix, cx);
+                    cx.listener(move |this, ev, cx| {
+                        this.on_row_click(ev, row_ix, cx);
                     }),
                 )
         } else {
@@ -1184,6 +1180,16 @@ where
             .size_full()
             .overflow_hidden()
             .child(self.render_table_head(left_cols_count, cx))
+            .context_menu({
+                let view = view.clone();
+                move |this, cx: &mut ViewContext<PopupMenu>| {
+                    if let Some(row_ix) = view.read(cx).right_clicked_row {
+                        view.read(cx).delegate.context_menu(row_ix, this, cx)
+                    } else {
+                        this
+                    }
+                }
+            })
             .map(|this| {
                 if rows_count == 0 {
                     this.child(div().size_full().child(self.delegate.render_empty(cx)))
