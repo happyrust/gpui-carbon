@@ -232,7 +232,6 @@ impl ListDelegate for CompanyListDelegate {
         self.loading = true;
 
         cx.spawn(|view, mut cx| async move {
-            dbg!("Load more data");
             // Simulate network request, delay 1s to load data.
             Timer::after(Duration::from_secs(1)).await;
 
@@ -242,9 +241,8 @@ impl ListDelegate for CompanyListDelegate {
                     view.delegate_mut()
                         .companies
                         .extend((0..200).map(|_| random_company()));
-                    view.delegate_mut().perform_search(&query, cx);
+                    _ = view.delegate_mut().perform_search(&query, cx);
                     view.delegate_mut().loading = false;
-                    dbg!("Loaded more data len: ", view.delegate().companies.len());
                     view.delegate_mut().is_eof = view.delegate().companies.len() >= 6000;
                 });
             })
