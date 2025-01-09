@@ -30,6 +30,26 @@ pub struct TitleStyle {
     pub foreground: Hsla,
 }
 
+#[derive(Clone, Copy, Default)]
+pub enum PanelControl {
+    Both,
+    #[default]
+    Menu,
+    Toolbar,
+}
+
+impl PanelControl {
+    #[inline]
+    pub fn toolbar_visible(&self) -> bool {
+        matches!(self, PanelControl::Both | PanelControl::Toolbar)
+    }
+
+    #[inline]
+    pub fn menu_visible(&self) -> bool {
+        matches!(self, PanelControl::Both | PanelControl::Menu)
+    }
+}
+
 /// The Panel trait used to define the panel.
 #[allow(unused_variables)]
 pub trait Panel: EventEmitter<PanelEvent> + FocusableView {
@@ -56,11 +76,11 @@ pub trait Panel: EventEmitter<PanelEvent> + FocusableView {
         true
     }
 
-    /// Return true if the panel is zoomable, default is `false`.
+    /// Return `PanelControl` if the panel is zoomable, default is `None`.
     ///
     /// This method called in Panel render, we should make sure it is fast.
-    fn zoomable(&self, cx: &AppContext) -> bool {
-        true
+    fn zoomable(&self, cx: &AppContext) -> Option<PanelControl> {
+        Some(PanelControl::Menu)
     }
 
     /// Return false to hide panel, true to show panel, default is `true`.
@@ -108,7 +128,7 @@ pub trait PanelView: 'static + Send + Sync {
     fn title(&self, cx: &WindowContext) -> AnyElement;
     fn title_style(&self, cx: &AppContext) -> Option<TitleStyle>;
     fn closable(&self, cx: &AppContext) -> bool;
-    fn zoomable(&self, cx: &AppContext) -> bool;
+    fn zoomable(&self, cx: &AppContext) -> Option<PanelControl>;
     fn visible(&self, cx: &AppContext) -> bool;
     fn set_active(&self, active: bool, cx: &mut WindowContext);
     fn set_zoomed(&self, zoomed: bool, cx: &mut WindowContext);
@@ -136,7 +156,7 @@ impl<T: Panel> PanelView for View<T> {
         self.read(cx).closable(cx)
     }
 
-    fn zoomable(&self, cx: &AppContext) -> bool {
+    fn zoomable(&self, cx: &AppContext) -> Option<PanelControl> {
         self.read(cx).zoomable(cx)
     }
 
