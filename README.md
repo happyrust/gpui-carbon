@@ -54,7 +54,7 @@ We build multi-themes support in application, this feature is not including in G
 
 GPUI and GPUI Component still in development, so we need add dependency by git.
 
-And GPUI Component dedend on `gpui` by special version (It keep updated to upstream) for including WebView support.
+And GPUI Component depends on `gpui` by special version (It keep updated to upstream) for including WebView support.
 
 ```toml
 gpui = { git = "https://github.com/huacnlee/zed.git", branch = "export-platform-window" }
