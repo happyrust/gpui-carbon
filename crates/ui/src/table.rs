@@ -151,10 +151,11 @@ pub struct Table<D: TableDelegate> {
     fixed_cols: FixedCols,
 
     pub vertical_scroll_handle: UniformListScrollHandle,
-    pub scrollbar_state: Rc<Cell<ScrollbarState>>,
+    pub vertical_scrollbar_state: Rc<Cell<ScrollbarState>>,
     pub horizontal_scroll_handle: ScrollHandle,
     pub horizontal_scrollbar_state: Rc<Cell<ScrollbarState>>,
 
+    scrollbar_visible: Edges<bool>,
     selected_row: Option<usize>,
     selection_state: SelectionState,
     right_clicked_row: Option<usize>,
@@ -343,7 +344,7 @@ where
             fixed_cols: FixedCols::default(),
             horizontal_scroll_handle: ScrollHandle::new(),
             vertical_scroll_handle: UniformListScrollHandle::new(),
-            scrollbar_state: Rc::new(Cell::new(ScrollbarState::new())),
+            vertical_scrollbar_state: Rc::new(Cell::new(ScrollbarState::new())),
             horizontal_scrollbar_state: Rc::new(Cell::new(ScrollbarState::new())),
             selection_state: SelectionState::Row,
             selected_row: None,
@@ -356,6 +357,7 @@ where
             stripe: false,
             border: true,
             size: Size::default(),
+            scrollbar_visible: Edges::all(true),
             visible_range: VisibleRangeState::default(),
         };
 
@@ -394,6 +396,21 @@ where
         cx.notify();
     }
 
+    /// Get the size of the table.
+    pub fn size(&self) -> Size {
+        self.size
+    }
+
+    /// Set scrollbar visibility.
+    pub fn scrollbar_visible(mut self, vertical: bool, horizontal: bool) -> Self {
+        self.scrollbar_visible = Edges {
+            right: vertical,
+            bottom: horizontal,
+            ..Default::default()
+        };
+        self
+    }
+
     /// When we update columns or rows, we need to refresh the table.
     pub fn refresh(&mut self, cx: &mut ViewContext<Self>) {
         self.prepare_col_groups(cx);
@@ -430,16 +447,6 @@ where
     //     self.horizontal_scroll_handle.scroll_to_item(col_ix);
     //     cx.notify();
     // }
-
-    /// Get scroll handle
-    pub fn scroll_handle(&self) -> &UniformListScrollHandle {
-        &self.vertical_scroll_handle
-    }
-
-    /// Get horizontal scroll handle
-    pub fn horizontal_scroll_handle(&self) -> &ScrollHandle {
-        &self.horizontal_scroll_handle
-    }
 
     /// Returns the selected row index.
     pub fn selected_row(&self) -> Option<usize> {
@@ -765,8 +772,8 @@ where
         }
     }
 
-    fn render_scrollbar(&self, cx: &mut ViewContext<Self>) -> Option<impl IntoElement> {
-        let state = self.scrollbar_state.clone();
+    fn render_vertical_scrollbar(&self, cx: &mut ViewContext<Self>) -> Option<impl IntoElement> {
+        let state = self.vertical_scrollbar_state.clone();
 
         Some(
             div()
@@ -1240,7 +1247,6 @@ where
         self.focus_handle.clone()
     }
 }
-
 impl<D> EventEmitter<TableEvent> for Table<D> where D: TableDelegate {}
 
 impl<D> Render for Table<D>
@@ -1378,9 +1384,11 @@ where
                     .absolute()
                     .top_0()
                     .size_full()
-                    .child(self.render_horizontal_scrollbar(cx))
-                    .when(rows_count > 0, |this| {
-                        this.children(self.render_scrollbar(cx))
+                    .when(self.scrollbar_visible.right && rows_count > 0, |this| {
+                        this.children(self.render_vertical_scrollbar(cx))
+                    })
+                    .when(self.scrollbar_visible.bottom, |this| {
+                        this.child(self.render_horizontal_scrollbar(cx))
                     }),
             )
             // Click out to cancel right clicked row
