@@ -116,6 +116,27 @@ struct FixedCols {
     left: usize,
 }
 
+/// The visible range of the rows and columns.
+#[derive(Debug, Default)]
+pub struct VisibleRangeState {
+    /// The visible range of the rows.
+    rows: Range<usize>,
+    /// The visible range of the columns.
+    cols: Range<usize>,
+}
+
+impl VisibleRangeState {
+    /// Returns the visible range of the rows.
+    pub fn rows(&self) -> Range<usize> {
+        self.rows.clone()
+    }
+
+    /// Returns the visible range of the columns.
+    pub fn cols(&self) -> Range<usize> {
+        self.cols.clone()
+    }
+}
+
 pub struct Table<D: TableDelegate> {
     focus_handle: FocusHandle,
     delegate: D,
@@ -148,6 +169,8 @@ pub struct Table<D: TableDelegate> {
     border: bool,
     /// The cell size of the table.
     size: Size,
+    /// The visible range of the rows and columns.
+    visible_range: VisibleRangeState,
 }
 
 #[allow(unused)]
@@ -280,6 +303,32 @@ pub trait TableDelegate: Sized + 'static {
     fn render_last_empty_col(&mut self, cx: &mut ViewContext<Table<Self>>) -> Div {
         h_flex().w_5().h_full().flex_shrink_0()
     }
+
+    /// Called when the visible range of the rows changed.
+    ///
+    /// NOTE: Make sure this method is fast, because it will be called frequently.
+    ///
+    /// This can used to handle some data update, to only update the visible rows.
+    /// Please ensure that the data is updated in the background task.
+    fn visible_rows_changed(
+        &mut self,
+        visible_range: Range<usize>,
+        cx: &mut ViewContext<Table<Self>>,
+    ) {
+    }
+
+    /// Called when the visible range of the columns changed.
+    ///
+    /// NOTE: Make sure this method is fast, because it will be called frequently.
+    ///
+    /// This can used to handle some data update, to only update the visible rows.
+    /// Please ensure that the data is updated in the background task.
+    fn visible_cols_changed(
+        &mut self,
+        visible_range: Range<usize>,
+        cx: &mut ViewContext<Table<Self>>,
+    ) {
+    }
 }
 
 impl<D> Table<D>
@@ -307,6 +356,7 @@ where
             stripe: false,
             border: true,
             size: Size::default(),
+            visible_range: VisibleRangeState::default(),
         };
 
         this.prepare_col_groups(cx);
@@ -434,6 +484,11 @@ where
         self.selected_row = None;
         self.selected_col = None;
         cx.notify();
+    }
+
+    /// Returns the visible range of the rows and columns.
+    pub fn visible_range(&self) -> &VisibleRangeState {
+        &self.visible_range
     }
 
     fn on_row_click(&mut self, ev: &MouseDownEvent, row_ix: usize, cx: &mut ViewContext<Self>) {
@@ -627,6 +682,35 @@ where
                 })
             })
             .detach()
+        }
+    }
+
+    fn update_visible_range_if_need(
+        &mut self,
+        visible_range: Range<usize>,
+        axis: Axis,
+        cx: &mut ViewContext<Self>,
+    ) {
+        // Skip when visible range is only 1 item.
+        // The visual_list will use first item to measure.
+        if visible_range.len() <= 1 {
+            return;
+        }
+
+        if axis == Axis::Vertical {
+            if self.visible_range.rows == visible_range {
+                return;
+            }
+            self.delegate_mut()
+                .visible_rows_changed(visible_range.clone(), cx);
+            self.visible_range.rows = visible_range;
+        } else {
+            if self.visible_range.cols == visible_range {
+                return;
+            }
+            self.delegate_mut()
+                .visible_cols_changed(visible_range.clone(), cx);
+            self.visible_range.cols = visible_range;
         }
     }
 
@@ -1054,6 +1138,12 @@ where
                         .child(
                             virtual_list(view, row_ix, Axis::Horizontal, col_sizes, {
                                 move |table, visible_range: Range<usize>, _, cx| {
+                                    table.update_visible_range_if_need(
+                                        visible_range.clone(),
+                                        Axis::Horizontal,
+                                        cx,
+                                    );
+
                                     visible_range
                                         .map(|col_ix| {
                                             let col_ix = col_ix + left_cols_count;
@@ -1227,6 +1317,11 @@ where
                                 {
                                     move |table, visible_range, cx| {
                                         table.load_more_if_need(visible_range.clone(), cx);
+                                        table.update_visible_range_if_need(
+                                            visible_range.clone(),
+                                            Axis::Vertical,
+                                            cx,
+                                        );
 
                                         if visible_range.end > rows_count {
                                             table.scroll_to_row(
