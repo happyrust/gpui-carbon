@@ -109,12 +109,11 @@ pub struct List<D: ListDelegate> {
     max_height: Option<Length>,
     query_input: Option<View<TextInput>>,
     last_query: Option<String>,
+    selectable: bool,
     loading: bool,
-
-    enable_scrollbar: bool,
+    scrollbar_visible: bool,
     vertical_scroll_handle: UniformListScrollHandle,
     scrollbar_state: Rc<Cell<ScrollbarState>>,
-
     pub(crate) size: Size,
     selected_index: Option<usize>,
     right_clicked_index: Option<usize>,
@@ -147,7 +146,8 @@ where
             vertical_scroll_handle: UniformListScrollHandle::new(),
             scrollbar_state: Rc::new(Cell::new(ScrollbarState::new())),
             max_height: None,
-            enable_scrollbar: true,
+            scrollbar_visible: true,
+            selectable: true,
             loading: false,
             size: Size::default(),
             _search_task: Task::ready(()),
@@ -169,13 +169,20 @@ where
         self
     }
 
-    pub fn no_scrollbar(mut self) -> Self {
-        self.enable_scrollbar = false;
+    /// Set the visibility of the scrollbar, default is true.
+    pub fn scrollbar_visible(mut self, visible: bool) -> Self {
+        self.scrollbar_visible = visible;
         self
     }
 
     pub fn no_query(mut self) -> Self {
         self.query_input = None;
+        self
+    }
+
+    /// Sets whether the list is selectable, default is true.
+    pub fn selectable(mut self, selectable: bool) -> Self {
+        self.selectable = selectable;
         self
     }
 
@@ -220,7 +227,7 @@ where
     }
 
     fn render_scrollbar(&self, cx: &mut ViewContext<Self>) -> Option<impl IntoElement> {
-        if !self.enable_scrollbar {
+        if !self.scrollbar_visible {
             return None;
         }
 
@@ -383,34 +390,36 @@ where
             .w_full()
             .relative()
             .children(self.delegate.render_item(ix, cx))
-            .when(selected || right_clicked, |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .top(px(0.))
-                        .left(px(0.))
-                        .right(px(0.))
-                        .bottom(px(0.))
-                        .when(selected, |this| this.bg(cx.theme().list_active))
-                        .border_1()
-                        .border_color(cx.theme().list_active_border),
+            .when(self.selectable, |this| {
+                this.when(selected || right_clicked, |this| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .top(px(0.))
+                            .left(px(0.))
+                            .right(px(0.))
+                            .bottom(px(0.))
+                            .when(selected, |this| this.bg(cx.theme().list_active))
+                            .border_1()
+                            .border_color(cx.theme().list_active_border),
+                    )
+                })
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, cx| {
+                        this.right_clicked_index = None;
+                        this.selected_index = Some(ix);
+                        this.on_action_confirm(&Confirm, cx);
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, _, cx| {
+                        this.right_clicked_index = Some(ix);
+                        cx.notify();
+                    }),
                 )
             })
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _, cx| {
-                    this.right_clicked_index = None;
-                    this.selected_index = Some(ix);
-                    this.on_action_confirm(&Confirm, cx);
-                }),
-            )
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, _, cx| {
-                    this.right_clicked_index = Some(ix);
-                    cx.notify();
-                }),
-            )
     }
 }
 
