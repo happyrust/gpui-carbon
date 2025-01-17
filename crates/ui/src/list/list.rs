@@ -1,4 +1,3 @@
-use std::ops::Range;
 use std::time::Duration;
 use std::{cell::Cell, rc::Rc};
 
@@ -95,10 +94,11 @@ pub trait ListDelegate: Sized + 'static {
 
     /// Returns a threshold value (n rows), of course, when scrolling to the bottom,
     /// the remaining number of rows triggers `load_more`.
+    /// This should smaller than the total number of first load rows.
     ///
-    /// Default: 50 rows
+    /// Default: 20 rows
     fn load_more_threshold(&self) -> usize {
-        50
+        20
     }
 
     /// Load more data when the table is scrolled to the bottom.
@@ -126,6 +126,7 @@ pub struct List<D: ListDelegate> {
     selected_index: Option<usize>,
     right_clicked_index: Option<usize>,
     _search_task: Task<()>,
+    _load_more_task: Task<()>,
 }
 
 impl<D> List<D>
@@ -160,6 +161,7 @@ where
             loading: false,
             size: Size::default(),
             _search_task: Task::ready(()),
+            _load_more_task: Task::ready(()),
         }
     }
 
@@ -323,27 +325,26 @@ where
     }
 
     /// Dispatch delegate's `load_more` method when the visible range is near the end.
-    fn load_more_if_need(&mut self, visible_range: Range<usize>, cx: &mut ViewContext<Self>) {
-        if !self.delegate.can_load_more(cx) {
-            return;
-        }
-
-        let items_count = self.delegate.items_count(cx);
+    fn load_more_if_need(
+        &mut self,
+        items_count: usize,
+        visible_end: usize,
+        cx: &mut ViewContext<Self>,
+    ) {
         let threshold = self.delegate.load_more_threshold();
-        if items_count < threshold {
-            return;
-        }
-
         // Securely handle subtract logic to prevent attempt to subtract with overflow
-        if visible_range.end >= items_count - threshold {
-            cx.spawn(|view, mut cx| async move {
-                cx.update(|cx| {
+        if visible_end >= items_count.saturating_sub(threshold) {
+            if !self.delegate.can_load_more(cx) {
+                return;
+            }
+
+            self._load_more_task = cx.spawn(|view, mut cx| async move {
+                _ = cx.update(|cx| {
                     view.update(cx, |view, cx| {
                         view.delegate.load_more(cx);
                     })
-                })
-            })
-            .detach()
+                });
+            });
         }
     }
 
@@ -525,7 +526,8 @@ where
                                             uniform_list(view, "uniform-list", items_count, {
                                                 move |list, visible_range, cx| {
                                                     list.load_more_if_need(
-                                                        visible_range.clone(),
+                                                        items_count,
+                                                        visible_range.end,
                                                         cx,
                                                     );
 
