@@ -2,9 +2,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    div, px, size, Entity, InteractiveElement, ParentElement, Pixels, Render, ScrollHandle,
-    SharedString, Size, StatefulInteractiveElement as _, Styled, View, ViewContext, VisualContext,
-    WindowContext,
+    div, px, size, Entity, InteractiveElement, IntoElement, ParentElement, Pixels, Render,
+    ScrollHandle, SharedString, Size, Styled, View, ViewContext, VisualContext, WindowContext,
 };
 use ui::button::Button;
 use ui::divider::Divider;
@@ -89,6 +88,61 @@ impl ScrollableStory {
         self.message = SharedString::from(msg.to_string());
         cx.notify();
     }
+
+    fn render_buttons(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+        h_flex()
+            .gap_2()
+            .justify_between()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(Button::new("test-0").label("Size 0").on_click(cx.listener(
+                        |view, _, cx| {
+                            view.change_test_cases(0, cx);
+                        },
+                    )))
+                    .child(Button::new("test-1").label("Size 1").on_click(cx.listener(
+                        |view, _, cx| {
+                            view.change_test_cases(1, cx);
+                        },
+                    )))
+                    .child(Button::new("test-2").label("Size 2").on_click(cx.listener(
+                        |view, _, cx| {
+                            view.change_test_cases(2, cx);
+                        },
+                    )))
+                    .child(Button::new("test-3").label("Size 3").on_click(cx.listener(
+                        |view, _, cx| {
+                            view.change_test_cases(3, cx);
+                        },
+                    )))
+                    .child(Divider::vertical().px_2())
+                    .child(
+                        Button::new("test-axis-both")
+                            .label("Both Scrollbar")
+                            .on_click(
+                                cx.listener(|view, _, cx| {
+                                    view.change_axis(ScrollbarAxis::Both, cx)
+                                }),
+                            ),
+                    )
+                    .child(
+                        Button::new("test-axis-vertical")
+                            .label("Vertical")
+                            .on_click(cx.listener(|view, _, cx| {
+                                view.change_axis(ScrollbarAxis::Vertical, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new("test-axis-horizontal")
+                            .label("Horizontal")
+                            .on_click(cx.listener(|view, _, cx| {
+                                view.change_axis(ScrollbarAxis::Horizontal, cx)
+                            })),
+                    ),
+            )
+            .child(Label::new(self.message.clone()))
+    }
 }
 
 impl super::Story for ScrollableStory {
@@ -97,7 +151,8 @@ impl super::Story for ScrollableStory {
     }
 
     fn description() -> &'static str {
-        "Add vertical or horizontal, or both scrollbars to a container, and use `virtual_list` to render a large number of items."
+        "Add vertical or horizontal, or both scrollbars to a container, \
+        and use `virtual_list` to render a large number of items."
     }
 
     fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
@@ -118,58 +173,7 @@ impl Render for ScrollableStory {
         v_flex()
             .size_full()
             .gap_4()
-            .child(
-                h_flex()
-                    .gap_2()
-                    .justify_between()
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(Button::new("test-0").label("Size 0").on_click(cx.listener(
-                                |view, _, cx| {
-                                    view.change_test_cases(0, cx);
-                                },
-                            )))
-                            .child(Button::new("test-1").label("Size 1").on_click(cx.listener(
-                                |view, _, cx| {
-                                    view.change_test_cases(1, cx);
-                                },
-                            )))
-                            .child(Button::new("test-2").label("Size 2").on_click(cx.listener(
-                                |view, _, cx| {
-                                    view.change_test_cases(2, cx);
-                                },
-                            )))
-                            .child(Button::new("test-3").label("Size 3").on_click(cx.listener(
-                                |view, _, cx| {
-                                    view.change_test_cases(3, cx);
-                                },
-                            )))
-                            .child(Divider::vertical().px_2())
-                            .child(
-                                Button::new("test-axis-both")
-                                    .label("Both Scrollbar")
-                                    .on_click(cx.listener(|view, _, cx| {
-                                        view.change_axis(ScrollbarAxis::Both, cx)
-                                    })),
-                            )
-                            .child(
-                                Button::new("test-axis-vertical")
-                                    .label("Vertical")
-                                    .on_click(cx.listener(|view, _, cx| {
-                                        view.change_axis(ScrollbarAxis::Vertical, cx)
-                                    })),
-                            )
-                            .child(
-                                Button::new("test-axis-horizontal")
-                                    .label("Horizontal")
-                                    .on_click(cx.listener(|view, _, cx| {
-                                        view.change_axis(ScrollbarAxis::Horizontal, cx)
-                                    })),
-                            ),
-                    )
-                    .child(Label::new(self.message.clone())),
-            )
+            .child(self.render_buttons(cx))
             .child(
                 div().w_full().child(
                     div().relative().w_full().h(px(350.)).child(
@@ -257,17 +261,16 @@ impl Render for ScrollableStory {
                     .border_1()
                     .border_color(cx.theme().border)
                     .w_full()
-                    .flex_1()
                     .overflow_hidden()
+                    .max_h(px(400.))
                     .child(
                         v_flex()
-                            .id("test-1")
-                            .scrollable(cx.view().entity_id(), ScrollbarAxis::Vertical)
-                            .focusable()
                             .p_3()
                             .w(self.test_width)
+                            .id("test-1")
+                            .scrollable(cx.view().entity_id(), ScrollbarAxis::Vertical)
                             .gap_1()
-                            .child("Hello world")
+                            .child("Scrollable Example")
                             .children(self.items.iter().take(500).map(|item| {
                                 div()
                                     .h(ITEM_HEIGHT)
