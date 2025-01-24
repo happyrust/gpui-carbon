@@ -1,4 +1,4 @@
-use std::{cell::Cell, ops::Range, rc::Rc};
+use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 
 use crate::{
     context_menu::ContextMenuExt,
@@ -172,6 +172,7 @@ pub struct Table<D: TableDelegate> {
     /// The visible range of the rows and columns.
     visible_range: VisibleRangeState,
 
+    _measure: Vec<Duration>,
     _load_more_task: Task<()>,
 }
 
@@ -374,6 +375,7 @@ where
             scrollbar_visible: Edges::all(true),
             visible_range: VisibleRangeState::default(),
             _load_more_task: Task::ready(()),
+            _measure: Vec::new(),
         };
 
         this.prepare_col_groups(cx);
@@ -1140,12 +1142,20 @@ where
                             .h_full()
                             .border_r_1()
                             .border_color(cx.theme().table_row_border)
-                            .children((0..left_cols_count).map(|col_ix| {
-                                self.render_col_wrap(col_ix, cx).child(
-                                    self.render_cell(col_ix, cx)
-                                        .child(self.delegate.render_td(row_ix, col_ix, cx)),
-                                )
-                            })),
+                            .children({
+                                let mut items = Vec::with_capacity(left_cols_count);
+
+                                (0..left_cols_count).for_each(|col_ix| {
+                                    items.push(
+                                        self.render_col_wrap(col_ix, cx).child(
+                                            self.render_cell(col_ix, cx)
+                                                .child(self.measure_render_td(row_ix, col_ix, cx)),
+                                        ),
+                                    );
+                                });
+
+                                items
+                            }),
                     )
                 } else {
                     None
@@ -1170,18 +1180,22 @@ where
                                             cx,
                                         );
 
-                                        visible_range
-                                            .map(|col_ix| {
-                                                let col_ix = col_ix + left_cols_count;
-                                                table.render_col_wrap(col_ix, cx).child(
-                                                    table.render_cell(col_ix, cx).child(
-                                                        table
-                                                            .delegate
-                                                            .render_td(row_ix, col_ix, cx),
-                                                    ),
-                                                )
-                                            })
-                                            .collect::<Vec<_>>()
+                                        let mut items = Vec::with_capacity(
+                                            visible_range.end - visible_range.start,
+                                        );
+
+                                        visible_range.for_each(|col_ix| {
+                                            let col_ix = col_ix + left_cols_count;
+                                            let el = table.render_col_wrap(col_ix, cx).child(
+                                                table.render_cell(col_ix, cx).child(
+                                                    table.measure_render_td(row_ix, col_ix, cx),
+                                                ),
+                                            );
+
+                                            items.push(el);
+                                        });
+
+                                        items
                                     }
                                 },
                             )
@@ -1250,6 +1264,48 @@ where
                 .child(self.delegate.render_last_empty_col(cx))
         }
     }
+
+    #[inline]
+    fn measure_render_td(
+        &mut self,
+        row_ix: usize,
+        col_ix: usize,
+        cx: &mut ViewContext<Self>,
+    ) -> impl IntoElement {
+        if !crate::measure_enable() {
+            return self
+                .delegate
+                .render_td(row_ix, col_ix, cx)
+                .into_any_element();
+        }
+
+        let start = std::time::Instant::now();
+        let el = self.delegate.render_td(row_ix, col_ix, cx);
+        self._measure.push(start.elapsed());
+        el.into_any_element()
+    }
+
+    fn measure(&mut self, _: &mut ViewContext<Self>) {
+        if !crate::measure_enable() {
+            return;
+        }
+
+        // Print avg measure time of each td
+        if self._measure.len() > 0 {
+            let total = self
+                ._measure
+                .iter()
+                .fold(Duration::default(), |acc, d| acc + *d);
+            let avg = total / self._measure.len() as u32;
+            eprintln!(
+                "last render {} cells total: {:?}, avg: {:?}",
+                self._measure.len(),
+                total,
+                avg,
+            );
+        }
+        self._measure.clear();
+    }
 }
 
 impl<D> Sizable for Table<D>
@@ -1276,6 +1332,8 @@ where
     D: TableDelegate,
 {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+        self.measure(cx);
+
         let view = cx.view().clone();
         let vertical_scroll_handle = self.vertical_scroll_handle.clone();
         let horizontal_scroll_handle = self.horizontal_scroll_handle.clone();
@@ -1301,12 +1359,14 @@ where
 
         // Calculate the extra rows needed to fill the table for stripe style.
         let mut extra_rows_needed = 0;
-        if let Some(row_height) = row_height {
-            if row_height > px(0.) {
-                let actual_height = row_height * rows_count as f32;
-                let remaining_height = total_height - actual_height;
-                if remaining_height > px(0.) {
-                    extra_rows_needed = (remaining_height / row_height).ceil() as usize;
+        if self.stripe {
+            if let Some(row_height) = row_height {
+                if row_height > px(0.) {
+                    let actual_height = row_height * rows_count as f32;
+                    let remaining_height = total_height - actual_height;
+                    if remaining_height > px(0.) {
+                        extra_rows_needed = (remaining_height / row_height).ceil() as usize;
+                    }
                 }
             }
         }
@@ -1359,19 +1419,23 @@ where
                                             );
                                         }
 
+                                        let mut items = Vec::with_capacity(
+                                            visible_range.end - visible_range.start,
+                                        );
+
                                         // Render fake rows to fill the table
-                                        visible_range
-                                            .map(|row_ix| {
-                                                // Render real rows for available data
-                                                table.render_table_row(
-                                                    row_ix,
-                                                    rows_count,
-                                                    left_cols_count,
-                                                    cols_count,
-                                                    cx,
-                                                )
-                                            })
-                                            .collect::<Vec<_>>()
+                                        visible_range.for_each(|row_ix| {
+                                            // Render real rows for available data
+                                            items.push(table.render_table_row(
+                                                row_ix,
+                                                rows_count,
+                                                left_cols_count,
+                                                cols_count,
+                                                cx,
+                                            ));
+                                        });
+
+                                        items
                                     }
                                 },
                             )
