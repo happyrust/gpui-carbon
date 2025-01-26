@@ -1,6 +1,6 @@
 use gpui::{
-    div, prelude::FluentBuilder as _, Corners, Div, Edges, ElementId, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, WindowContext,
+    div, prelude::FluentBuilder as _, App, Corners, Div, Edges, ElementId, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -23,7 +23,7 @@ pub struct ButtonGroup {
     variant: Option<ButtonVariant>,
     size: Option<Size>,
 
-    on_click: Option<Box<dyn Fn(&Vec<usize>, &mut WindowContext) + 'static>>,
+    on_click: Option<Box<dyn Fn(&Vec<usize>, &mut Window, &mut App) + 'static>>,
 }
 
 impl Disableable for ButtonGroup {
@@ -70,7 +70,10 @@ impl ButtonGroup {
     /// Sets the on_click handler for the ButtonGroup.
     ///
     /// The handler first argument is a vector of the selected button indices.
-    pub fn on_click(mut self, handler: impl Fn(&Vec<usize>, &mut WindowContext) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&Vec<usize>, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Box::new(handler));
         self
     }
@@ -97,7 +100,7 @@ impl ButtonVariants for ButtonGroup {
 }
 
 impl RenderOnce for ButtonGroup {
-    fn render(self, _cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let children_len = self.children.len();
         let mut selected_ixs: Vec<usize> = Vec::new();
         let state = Rc::new(Cell::new(None));
@@ -165,7 +168,7 @@ impl RenderOnce for ButtonGroup {
                         .when_some(self.size, |this, size| this.with_size(size))
                         .when_some(self.variant, |this, variant| this.with_variant(variant))
                         .when_some(self.compact, |this, _| this.compact())
-                        .on_click(move |_, _| {
+                        .on_click(move |_, _, _| {
                             state.set(Some(child_index));
                         });
 
@@ -175,7 +178,7 @@ impl RenderOnce for ButtonGroup {
             .when_some(
                 self.on_click.filter(|_| !self.disabled),
                 move |this, on_click| {
-                    this.on_click(move |_, cx| {
+                    this.on_click(move |_, window, cx| {
                         let mut selected_ixs = selected_ixs.clone();
                         if let Some(ix) = state.get() {
                             if self.multiple {
@@ -190,7 +193,7 @@ impl RenderOnce for ButtonGroup {
                             }
                         }
 
-                        on_click(&selected_ixs, cx);
+                        on_click(&selected_ixs, window, cx);
                     })
                 },
             )

@@ -1,8 +1,8 @@
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use gpui::{
-    prelude::FluentBuilder, AnyElement, ClipboardItem, Element, ElementId, GlobalElementId,
-    IntoElement, LayoutId, ParentElement, SharedString, Styled, WindowContext,
+    prelude::FluentBuilder, AnyElement, App, ClipboardItem, Element, ElementId, GlobalElementId,
+    IntoElement, LayoutId, ParentElement, SharedString, Styled, Window,
 };
 
 use crate::{
@@ -13,9 +13,9 @@ use crate::{
 pub struct Clipboard {
     id: ElementId,
     value: SharedString,
-    value_fn: Option<Rc<dyn Fn(&mut WindowContext) -> SharedString>>,
-    content_builder: Option<Box<dyn Fn(&mut WindowContext) -> AnyElement>>,
-    copied_callback: Option<Rc<dyn Fn(SharedString, &mut WindowContext)>>,
+    value_fn: Option<Rc<dyn Fn(&mut Window, &mut App) -> SharedString>>,
+    content_builder: Option<Box<dyn Fn(&mut Window, &mut App) -> AnyElement>>,
+    copied_callback: Option<Rc<dyn Fn(SharedString, &mut Window, &mut App)>>,
 }
 
 impl Clipboard {
@@ -39,7 +39,7 @@ impl Clipboard {
     /// When used this, the copy value will use the result of the function.
     pub fn value_fn(
         mut self,
-        value: impl Fn(&mut WindowContext) -> SharedString + 'static,
+        value: impl Fn(&mut Window, &mut App) -> SharedString + 'static,
     ) -> Self {
         self.value_fn = Some(Rc::new(value));
         self
@@ -47,7 +47,7 @@ impl Clipboard {
 
     pub fn on_copied<F>(mut self, handler: F) -> Self
     where
-        F: Fn(SharedString, &mut WindowContext) + 'static,
+        F: Fn(SharedString, &mut Window, &mut App) + 'static,
     {
         self.copied_callback = Some(Rc::new(handler));
         self
@@ -56,9 +56,11 @@ impl Clipboard {
     pub fn content<E, F>(mut self, builder: F) -> Self
     where
         E: IntoElement,
-        F: Fn(&mut WindowContext) -> E + 'static,
+        F: Fn(&mut Window, &mut App) -> E + 'static,
     {
-        self.content_builder = Some(Box::new(move |cx| builder(cx).into_any_element()));
+        self.content_builder = Some(Box::new(move |window, cx| {
+            builder(window, cx).into_any_element()
+        }));
         self
     }
 }
@@ -88,15 +90,16 @@ impl Element for Clipboard {
     fn request_layout(
         &mut self,
         global_id: Option<&GlobalElementId>,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        cx.with_element_state::<ClipboardState, _>(global_id.unwrap(), |state, cx| {
+        window.with_element_state::<ClipboardState, _>(global_id.unwrap(), |state, window| {
             let state = state.unwrap_or_default();
 
             let content_element = self
                 .content_builder
                 .as_ref()
-                .map(|builder| builder(cx).into_any_element());
+                .map(|builder| builder(window, cx).into_any_element());
             let value = self.value.clone();
             let clipboard_id = self.id.clone();
             let copied_callback = self.copied_callback.as_ref().map(|c| c.clone());
@@ -118,11 +121,11 @@ impl Element for Clipboard {
                         .ghost()
                         .xsmall()
                         .when(!copide_value, |this| {
-                            this.on_click(move |_, cx| {
+                            this.on_click(move |_, window, cx| {
                                 cx.stop_propagation();
                                 let value = value_fn
                                     .as_ref()
-                                    .map(|f| f(cx))
+                                    .map(|f| f(window, cx))
                                     .unwrap_or_else(|| value.clone());
                                 cx.write_to_clipboard(ClipboardItem::new_string(value.to_string()));
                                 *copied.borrow_mut() = true;
@@ -136,14 +139,14 @@ impl Element for Clipboard {
                                 .detach();
 
                                 if let Some(callback) = &copied_callback {
-                                    callback(value.clone(), cx);
+                                    callback(value.clone(), window, cx);
                                 }
                             })
                         }),
                 )
                 .into_any_element();
 
-            ((element.request_layout(cx), element), state)
+            ((element.request_layout(window, cx), element), state)
         })
     }
 
@@ -152,9 +155,10 @@ impl Element for Clipboard {
         _: Option<&gpui::GlobalElementId>,
         _: gpui::Bounds<gpui::Pixels>,
         element: &mut Self::RequestLayoutState,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) {
-        element.prepaint(cx);
+        element.prepaint(window, cx);
     }
 
     fn paint(
@@ -163,8 +167,9 @@ impl Element for Clipboard {
         _: gpui::Bounds<gpui::Pixels>,
         element: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) {
-        element.paint(cx)
+        element.paint(window, cx)
     }
 }

@@ -5,9 +5,9 @@ use crate::{
     v_flex, ActiveTheme, Collapsible, Icon, IconName, Side, Sizable, StyledExt,
 };
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, ClickEvent, Entity, EntityId,
-    InteractiveElement as _, IntoElement, ParentElement, Pixels, Render, RenderOnce, Styled, View,
-    WindowContext,
+    div, prelude::FluentBuilder, px, AnyElement, App, ClickEvent, Entity, EntityId,
+    InteractiveElement as _, IntoElement, ParentElement, Pixels, Render, RenderOnce, Styled,
+    Window,
 };
 use std::rc::Rc;
 
@@ -54,11 +54,11 @@ impl<E: Collapsible + IntoElement> Sidebar<E> {
         }
     }
 
-    pub fn left<V: Render + 'static>(view: &View<V>) -> Self {
+    pub fn left<V: Render + 'static>(view: &Entity<V>) -> Self {
         Self::new(view.entity_id(), Side::Left)
     }
 
-    pub fn right<V: Render + 'static>(view: &View<V>) -> Self {
+    pub fn right<V: Render + 'static>(view: &Entity<V>) -> Self {
         Self::new(view.entity_id(), Side::Right)
     }
 
@@ -111,7 +111,7 @@ pub struct SidebarToggleButton {
     btn: Button,
     is_collapsed: bool,
     side: Side,
-    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut WindowContext)>>,
+    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
 }
 
 impl SidebarToggleButton {
@@ -139,7 +139,7 @@ impl SidebarToggleButton {
 
     pub fn on_click(
         mut self,
-        on_click: impl Fn(&ClickEvent, &mut WindowContext) + 'static,
+        on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_click = Some(Rc::new(on_click));
         self
@@ -147,7 +147,7 @@ impl SidebarToggleButton {
 }
 
 impl RenderOnce for SidebarToggleButton {
-    fn render(self, _: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let is_collapsed = self.is_collapsed;
         let on_click = self.on_click.clone();
 
@@ -167,8 +167,8 @@ impl RenderOnce for SidebarToggleButton {
 
         self.btn
             .when_some(on_click, |this, on_click| {
-                this.on_click(move |ev, cx| {
-                    on_click(ev, cx);
+                this.on_click(move |ev, window, cx| {
+                    on_click(ev, window, cx);
                 })
             })
             .icon(Icon::new(icon).size_4())
@@ -176,7 +176,7 @@ impl RenderOnce for SidebarToggleButton {
 }
 
 impl<E: Collapsible + IntoElement> RenderOnce for Sidebar<E> {
-    fn render(mut self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(mut self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let is_collapsed = self.is_collapsed;
         v_flex()
             .id("sidebar")

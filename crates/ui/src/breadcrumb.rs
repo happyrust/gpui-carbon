@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, ClickEvent, ElementId, InteractiveElement as _, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, WindowContext,
+    div, prelude::FluentBuilder as _, App, ClickEvent, ElementId, InteractiveElement as _,
+    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    Window,
 };
 
 use crate::{h_flex, ActiveTheme, Icon, IconName};
@@ -16,7 +17,7 @@ pub struct Breadcrumb {
 pub struct BreadcrumbItem {
     id: ElementId,
     text: SharedString,
-    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut WindowContext)>>,
+    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     disabled: bool,
     is_last: bool,
 }
@@ -39,7 +40,7 @@ impl BreadcrumbItem {
 
     pub fn on_click(
         mut self,
-        on_click: impl Fn(&ClickEvent, &mut WindowContext) + 'static,
+        on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_click = Some(Rc::new(on_click));
         self
@@ -53,7 +54,7 @@ impl BreadcrumbItem {
 }
 
 impl RenderOnce for BreadcrumbItem {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         div()
             .id(self.id)
             .child(self.text)
@@ -64,8 +65,8 @@ impl RenderOnce for BreadcrumbItem {
             })
             .when(!self.disabled, |this| {
                 this.when_some(self.on_click, |this, on_click| {
-                    this.cursor_pointer().on_click(move |event, cx| {
-                        on_click(event, cx);
+                    this.cursor_pointer().on_click(move |event, window, cx| {
+                        on_click(event, window, cx);
                     })
                 })
             })
@@ -87,7 +88,7 @@ impl Breadcrumb {
 #[derive(IntoElement)]
 struct BreadcrumbSeparator;
 impl RenderOnce for BreadcrumbSeparator {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         Icon::new(IconName::ChevronRight)
             .text_color(cx.theme().muted_foreground)
             .size_3p5()
@@ -96,7 +97,7 @@ impl RenderOnce for BreadcrumbSeparator {
 }
 
 impl RenderOnce for Breadcrumb {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let items_count = self.items.len();
 
         let mut children = vec![];

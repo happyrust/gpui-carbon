@@ -1,6 +1,6 @@
 use gpui::{
-    div, px, Div, IntoElement, ParentElement, Render, SharedString, Styled, View, ViewContext,
-    VisualContext as _, WindowContext,
+    div, px, App, AppContext, Context, Div, Entity, Focusable, IntoElement, ParentElement, Render,
+    SharedString, Styled, Window,
 };
 
 use ui::{
@@ -36,17 +36,17 @@ impl super::Story for SwitchStory {
         "Switch, Radio, Checkbox components testing and examples"
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
-        Self::view(cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
+        Self::view(window, cx)
     }
 }
 
 impl SwitchStory {
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::new)
+    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(window, cx))
     }
 
-    fn new(cx: &mut ViewContext<Self>) -> Self {
+    fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
             switch1: true,
@@ -62,21 +62,21 @@ impl SwitchStory {
     }
 }
 
-impl gpui::FocusableView for SwitchStory {
-    fn focus_handle(&self, _: &gpui::AppContext) -> gpui::FocusHandle {
+impl Focusable for SwitchStory {
+    fn focus_handle(&self, _: &gpui::App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl Render for SwitchStory {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
         fn title(title: impl Into<SharedString>) -> Div {
             v_flex().flex_1().gap_2().child(Label::new(title).text_xl())
         }
 
-        fn card(cx: &ViewContext<SwitchStory>) -> Div {
+        fn card(cx: &Context<SwitchStory>) -> Div {
             let theme = cx.theme();
 
             h_flex()
@@ -109,7 +109,7 @@ impl Render for SwitchStory {
                                 .checked(self.switch1)
                                 .label_side(Side::Left)
                                 .label("Subscribe")
-                                .on_click(cx.listener(move |view, checked, cx| {
+                                .on_click(cx.listener(move |view, checked, _, cx| {
                                     view.switch1 = *checked;
                                     cx.notify();
                                 })),
@@ -129,7 +129,7 @@ impl Render for SwitchStory {
                         .child(
                             Switch::new("switch2")
                                 .checked(self.switch2)
-                                .on_click(cx.listener(move |view, checked, cx| {
+                                .on_click(cx.listener(move |view, checked, _, cx| {
                                     view.switch2 = *checked;
                                     cx.notify();
                                 })),
@@ -144,7 +144,7 @@ impl Render for SwitchStory {
                             h_flex()
                                 .items_center()
                                 .gap_6()
-                                .child(Switch::new("switch3").disabled(true).on_click(|v, _| {
+                                .child(Switch::new("switch3").disabled(true).on_click(|v, _, _| {
                                     println!("Switch value changed: {:?}", v);
                                 }))
                                 .child(
@@ -152,7 +152,7 @@ impl Render for SwitchStory {
                                         .label("Airplane Mode")
                                         .checked(true)
                                         .disabled(true)
-                                        .on_click(|ev, _| {
+                                        .on_click(|ev, _, _| {
                                             println!("Switch value changed: {:?}", ev);
                                         }),
                                 ),
@@ -169,7 +169,7 @@ impl Render for SwitchStory {
                                     .checked(self.switch3)
                                     .label("Small Size")
                                     .small()
-                                    .on_click(cx.listener(move |view, checked, cx| {
+                                    .on_click(cx.listener(move |view, checked, _, cx| {
                                         view.switch3 = *checked;
                                         cx.notify();
                                     })),
@@ -183,7 +183,7 @@ impl Render for SwitchStory {
                             .items_start()
                             .gap_6()
                             .child(Checkbox::new("check1").checked(self.check1).on_click(
-                                cx.listener(|v, _, _| {
+                                cx.listener(|v, _, _, _| {
                                     v.check1 = !v.check1;
                                 }),
                             ))
@@ -191,7 +191,7 @@ impl Render for SwitchStory {
                                 Checkbox::new("check2")
                                     .checked(self.check2)
                                     .label("Subscribe to newsletter")
-                                    .on_click(cx.listener(|v, _, _| {
+                                    .on_click(cx.listener(|v, _, _, _| {
                                         v.check2 = !v.check2;
                                     })),
                             )
@@ -199,7 +199,7 @@ impl Render for SwitchStory {
                                 Checkbox::new("check3")
                                     .checked(self.check3)
                                     .label("Remember me")
-                                    .on_click(cx.listener(|v, _, _| {
+                                    .on_click(cx.listener(|v, _, _, _| {
                                         v.check3 = !v.check3;
                                     })),
                             )
@@ -238,7 +238,7 @@ impl Render for SwitchStory {
                             .gap_4()
                             .items_start()
                             .child(Radio::new("radio1").checked(self.radio_check1).on_click(
-                                cx.listener(|this, v, _cx| {
+                                cx.listener(|this, v, _, _| {
                                     this.radio_check1 = *v;
                                 }),
                             ))
@@ -246,7 +246,7 @@ impl Render for SwitchStory {
                                 Radio::new("radio2")
                                     .label("Radio")
                                     .checked(self.radio_check2)
-                                    .on_click(cx.listener(|this, v, _cx| {
+                                    .on_click(cx.listener(|this, v, _, _| {
                                         this.radio_check2 = *v;
                                     })),
                             )
@@ -276,7 +276,7 @@ impl Render for SwitchStory {
                                 RadioGroup::horizontal()
                                     .children(["One", "Two", "Three"])
                                     .selected_index(self.radio_group_checked)
-                                    .on_change(cx.listener(|this, selected_ix: &usize, _cx| {
+                                    .on_change(cx.listener(|this, selected_ix: &usize, _, _| {
                                         this.radio_group_checked = Some(*selected_ix);
                                     })),
                             ),
@@ -289,7 +289,7 @@ impl Render for SwitchStory {
                                     .child(Radio::new("one2").label("Canada"))
                                     .child(Radio::new("one3").label("Mexico"))
                                     .selected_index(self.radio_group_checked)
-                                    .on_change(cx.listener(|this, selected_ix: &usize, _cx| {
+                                    .on_change(cx.listener(|this, selected_ix: &usize, _, _| {
                                         this.radio_group_checked = Some(*selected_ix);
                                     })),
                             ),

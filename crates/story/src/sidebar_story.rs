@@ -1,6 +1,6 @@
 use gpui::{
-    div, impl_internal_actions, relative, ClickEvent, ParentElement, Render, SharedString, Styled,
-    View, ViewContext, VisualContext as _, WindowContext,
+    div, impl_internal_actions, relative, App, AppContext, ClickEvent, Context, Entity, Focusable,
+    ParentElement, Render, SharedString, Styled, Window,
 };
 
 use serde::Deserialize;
@@ -29,11 +29,11 @@ pub struct SidebarStory {
 }
 
 impl SidebarStory {
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::new)
+    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(window, cx))
     }
 
-    fn new(cx: &mut ViewContext<Self>) -> Self {
+    fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             active_item: Item::Playground,
             active_subitem: None,
@@ -99,9 +99,10 @@ impl Item {
 
     pub fn handler(
         &self,
-    ) -> impl Fn(&mut SidebarStory, &ClickEvent, &mut ViewContext<SidebarStory>) + 'static {
+    ) -> impl Fn(&mut SidebarStory, &ClickEvent, &mut Window, &mut Context<SidebarStory>) + 'static
+    {
         let item = *self;
-        move |this, _, cx| {
+        move |this, _, _, cx| {
             this.active_item = item;
             this.active_subitem = None;
             cx.notify();
@@ -152,10 +153,11 @@ impl SubItem {
     pub fn handler(
         &self,
         item: &Item,
-    ) -> impl Fn(&mut SidebarStory, &ClickEvent, &mut ViewContext<SidebarStory>) + 'static {
+    ) -> impl Fn(&mut SidebarStory, &ClickEvent, &mut Window, &mut Context<SidebarStory>) + 'static
+    {
         let item = *item;
         let subitem = *self;
-        move |this, _, cx| {
+        move |this, _, _, cx| {
             this.active_item = item;
             this.active_subitem = Some(subitem);
             cx.notify();
@@ -168,17 +170,21 @@ impl super::Story for SidebarStory {
         "Sidebar"
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
-        Self::view(cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
+        Self::view(window, cx)
     }
 }
-impl gpui::FocusableView for SidebarStory {
-    fn focus_handle(&self, _: &gpui::AppContext) -> gpui::FocusHandle {
+impl Focusable for SidebarStory {
+    fn focus_handle(&self, _: &gpui::App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 impl Render for SidebarStory {
-    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl gpui::IntoElement {
+    fn render(
+        &mut self,
+        _: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
         let groups: [Vec<Item>; 2] = [
             vec![
                 Item::Playground,
@@ -199,7 +205,7 @@ impl Render for SidebarStory {
             .border_color(cx.theme().border)
             .h_full()
             .child(
-                Sidebar::left(cx.view())
+                Sidebar::left(&cx.model())
                     .collapsed(self.is_collapsed)
                     .header(
                         SidebarHeader::new()
@@ -238,7 +244,7 @@ impl Render for SidebarStory {
                                     Icon::new(IconName::ChevronsUpDown).size_4().flex_shrink_0(),
                                 )
                             })
-                            .popup_menu(|menu, _| {
+                            .popup_menu(|menu, _, _| {
                                 menu.menu(
                                     "Twitter Inc.",
                                     Box::new(SelectCompany(SharedString::from("twitter"))),
@@ -288,7 +294,7 @@ impl Render for SidebarStory {
                                         }
                                         submenu
                                     },
-                                    cx.listener(move |this, _, cx| {
+                                    cx.listener(move |this, _, _, cx| {
                                         this.active_item = item;
                                         cx.notify();
                                     }),
@@ -323,7 +329,7 @@ impl Render for SidebarStory {
                             .child(
                                 SidebarToggleButton::left()
                                     .collapsed(self.is_collapsed)
-                                    .on_click(cx.listener(|this, _, cx| {
+                                    .on_click(cx.listener(|this, _, _, cx| {
                                         this.is_collapsed = !this.is_collapsed;
                                         cx.notify();
                                     })),
@@ -332,14 +338,14 @@ impl Render for SidebarStory {
                             .child(
                                 Breadcrumb::new()
                                     .item(BreadcrumbItem::new("0", "Home").on_click(cx.listener(
-                                        |this, _, cx| {
+                                        |this, _, _, cx| {
                                             this.active_item = Item::Playground;
                                             cx.notify();
                                         },
                                     )))
                                     .item(
                                         BreadcrumbItem::new("1", self.active_item.label())
-                                            .on_click(cx.listener(|this, _, cx| {
+                                            .on_click(cx.listener(|this, _, _, cx| {
                                                 this.active_subitem = None;
                                                 cx.notify();
                                             })),

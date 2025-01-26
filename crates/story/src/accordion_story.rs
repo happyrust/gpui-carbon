@@ -1,6 +1,6 @@
 use gpui::{
-    FocusHandle, IntoElement, ParentElement as _, Render, Styled as _, View, ViewContext,
-    VisualContext as _, WindowContext,
+    App, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, ParentElement as _,
+    Render, Styled as _, Window,
 };
 use ui::{
     accordion::Accordion,
@@ -24,17 +24,17 @@ impl super::Story for AccordionStory {
         "Accordion"
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
-        Self::view(cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
+        Self::view(window, cx)
     }
 }
 
 impl AccordionStory {
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::new)
+    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(window, cx))
     }
 
-    fn new(cx: &mut ViewContext<Self>) -> Self {
+    fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             bordered: true,
             open_ixs: Vec::new(),
@@ -44,25 +44,25 @@ impl AccordionStory {
         }
     }
 
-    fn toggle_accordion(&mut self, open_ixs: Vec<usize>, cx: &mut ViewContext<Self>) {
+    fn toggle_accordion(&mut self, open_ixs: Vec<usize>, _: &mut Window, cx: &mut Context<Self>) {
         self.open_ixs = open_ixs;
         cx.notify();
     }
 
-    fn set_size(&mut self, size: Size, cx: &mut ViewContext<Self>) {
+    fn set_size(&mut self, size: Size, _: &mut Window, cx: &mut Context<Self>) {
         self.size = size;
         cx.notify();
     }
 }
 
-impl gpui::FocusableView for AccordionStory {
-    fn focus_handle(&self, _: &gpui::AppContext) -> gpui::FocusHandle {
+impl Focusable for AccordionStory {
+    fn focus_handle(&self, _: &gpui::App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl Render for AccordionStory {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .gap_3()
             .child(
@@ -92,7 +92,7 @@ impl Render for AccordionStory {
                                     .label("Large")
                                     .selected(self.size == Size::Large),
                             )
-                            .on_click(cx.listener(|this, selecteds: &Vec<usize>, cx| {
+                            .on_click(cx.listener(|this, selecteds: &Vec<usize>, window, cx| {
                                 let size = match selecteds[0] {
                                     0 => Size::XSmall,
                                     1 => Size::Small,
@@ -100,14 +100,14 @@ impl Render for AccordionStory {
                                     3 => Size::Large,
                                     _ => unreachable!(),
                                 };
-                                this.set_size(size, cx);
+                                this.set_size(size, window, cx);
                             })),
                     )
                     .child(
                         Checkbox::new("disabled")
                             .label("Disabled")
                             .checked(self.disabled)
-                            .on_click(cx.listener(|this, checked, cx| {
+                            .on_click(cx.listener(|this, checked, _, cx| {
                                 this.disabled = *checked;
                                 cx.notify();
                             })),
@@ -116,7 +116,7 @@ impl Render for AccordionStory {
                         Checkbox::new("bordered")
                             .label("Bordered")
                             .checked(self.bordered)
-                            .on_click(cx.listener(|this, checked, cx| {
+                            .on_click(cx.listener(|this, checked, _, cx| {
                                 this.bordered = *checked;
                                 cx.notify();
                             })),
@@ -154,8 +154,8 @@ impl Render for AccordionStory {
                             .content(
                                 "This is the third accordion content. It can be any view, like a text view or a button."
                             )
-                    ) .on_toggle_click(cx.listener(|this, open_ixs: &[usize], cx| {
-                        this.toggle_accordion(open_ixs.to_vec(), cx);
+                    ) .on_toggle_click(cx.listener(|this, open_ixs: &[usize], window,cx| {
+                        this.toggle_accordion(open_ixs.to_vec(), window, cx);
                     })),
             )
     }

@@ -1,9 +1,9 @@
 use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use gpui::{
-    div, prelude::FluentBuilder as _, rems, AnyElement, Div, ElementId, InteractiveElement as _,
-    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _, Styled,
-    WindowContext,
+    div, prelude::FluentBuilder as _, rems, AnyElement, App, Div, ElementId,
+    InteractiveElement as _, IntoElement, ParentElement, RenderOnce, SharedString,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 
 use crate::{h_flex, v_flex, ActiveTheme as _, Icon, IconName, Sizable, Size};
@@ -18,7 +18,7 @@ pub struct Accordion {
     bordered: bool,
     disabled: bool,
     children: Vec<AccordionItem>,
-    on_toggle_click: Option<Arc<dyn Fn(&[usize], &mut WindowContext) + Send + Sync>>,
+    on_toggle_click: Option<Arc<dyn Fn(&[usize], &mut Window, &mut App) + Send + Sync>>,
 }
 
 impl Accordion {
@@ -64,7 +64,7 @@ impl Accordion {
     /// The first argument `Vec<usize>` is the indices of the open accordions.
     pub fn on_toggle_click(
         mut self,
-        on_toggle_click: impl Fn(&[usize], &mut WindowContext) + Send + Sync + 'static,
+        on_toggle_click: impl Fn(&[usize], &mut Window, &mut App) + Send + Sync + 'static,
     ) -> Self {
         self.on_toggle_click = Some(Arc::new(on_toggle_click));
         self
@@ -79,7 +79,7 @@ impl Sizable for Accordion {
 }
 
 impl RenderOnce for Accordion {
-    fn render(self, _: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let mut open_ixs: Vec<usize> = Vec::new();
         let multiple = self.multiple;
         let state = Rc::new(Cell::new(None));
@@ -105,7 +105,7 @@ impl RenderOnce for Accordion {
                             .with_size(self.size)
                             .bordered(self.bordered)
                             .when(self.disabled, |this| this.disabled(true))
-                            .on_toggle_click(move |_, _| {
+                            .on_toggle_click(move |_, _, _| {
                                 state.set(Some(ix));
                             })
                     }),
@@ -113,7 +113,7 @@ impl RenderOnce for Accordion {
             .when_some(
                 self.on_toggle_click.filter(|_| !self.disabled),
                 move |this, on_toggle_click| {
-                    this.on_click(move |_, cx| {
+                    this.on_click(move |_, window, cx| {
                         let mut open_ixs = open_ixs.clone();
                         if let Some(ix) = state.get() {
                             if multiple {
@@ -131,7 +131,7 @@ impl RenderOnce for Accordion {
                             }
                         }
 
-                        on_toggle_click(&open_ixs, cx);
+                        on_toggle_click(&open_ixs, window, cx);
                     })
                 },
             )
@@ -148,7 +148,7 @@ pub struct AccordionItem {
     size: Size,
     bordered: bool,
     disabled: bool,
-    on_toggle_click: Option<Arc<dyn Fn(&bool, &mut WindowContext)>>,
+    on_toggle_click: Option<Arc<dyn Fn(&bool, &mut Window, &mut App)>>,
 }
 
 impl AccordionItem {
@@ -197,7 +197,7 @@ impl AccordionItem {
 
     fn on_toggle_click(
         mut self,
-        on_toggle_click: impl Fn(&bool, &mut WindowContext) + 'static,
+        on_toggle_click: impl Fn(&bool, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_toggle_click = Some(Arc::new(on_toggle_click));
         self
@@ -212,7 +212,7 @@ impl Sizable for AccordionItem {
 }
 
 impl RenderOnce for AccordionItem {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let text_size = match self.size {
             Size::XSmall => rems(0.875),
             Size::Small => rems(0.875),
@@ -277,8 +277,8 @@ impl RenderOnce for AccordionItem {
                         self.on_toggle_click.filter(|_| !self.disabled),
                         |this, on_toggle_click| {
                             this.on_click({
-                                move |_, cx| {
-                                    on_toggle_click(&!self.open, cx);
+                                move |_, window, cx| {
+                                    on_toggle_click(&!self.open, window, cx);
                                 }
                             })
                         },

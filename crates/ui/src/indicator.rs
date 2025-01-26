@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use crate::{Icon, IconName, Sizable, Size};
 use gpui::{
-    div, ease_in_out, percentage, prelude::FluentBuilder as _, Animation, AnimationExt as _, Hsla,
-    IntoElement, ParentElement, RenderOnce, Styled as _, Transformation, WindowContext,
+    div, ease_in_out, percentage, prelude::FluentBuilder as _, Animation, AnimationExt as _, App,
+    Hsla, IntoElement, ParentElement, RenderOnce, Styled as _, Transformation, Window,
 };
 
 #[derive(IntoElement)]
@@ -43,7 +43,7 @@ impl Sizable for Indicator {
 }
 
 impl RenderOnce for Indicator {
-    fn render(self, _: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         div()
             .child(
                 self.icon

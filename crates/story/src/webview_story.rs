@@ -1,6 +1,6 @@
 use gpui::{
-    div, ClickEvent, FocusHandle, FocusableView, IntoElement, ParentElement as _, Render,
-    Styled as _, View, ViewContext, VisualContext as _, WindowContext,
+    div, App, AppContext, ClickEvent, Context, Entity, FocusHandle, Focusable, IntoElement,
+    ParentElement as _, Render, Styled as _, Window,
 };
 use ui::{
     h_flex,
@@ -12,8 +12,8 @@ use ui::{
 
 pub struct WebViewStory {
     focus_handle: FocusHandle,
-    webview: View<WebView>,
-    address_input: View<TextInput>,
+    webview: Entity<WebView>,
+    address_input: Entity<TextInput>,
 }
 
 impl super::Story for WebViewStory {
@@ -21,25 +21,25 @@ impl super::Story for WebViewStory {
         "WebView"
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
-        Self::view(cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
+        Self::view(window, cx)
     }
 }
 
 impl WebViewStory {
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
+    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let focus_handle = cx.focus_handle();
 
-        let webview = cx.new_view(|cx| {
+        let webview = cx.new(|cx| {
             let webview = ui::wry::WebViewBuilder::new()
-                .build_as_child(&cx.raw_window_handle())
+                .build_as_child(&window.raw_window_handle())
                 .unwrap();
-            WebView::new(cx, webview)
+            WebView::new(webview, window, cx)
         });
 
-        let address_input = cx.new_view(|cx| {
-            let mut input = TextInput::new(cx);
-            input.set_text("https://google.com", cx);
+        let address_input = cx.new(|cx| {
+            let mut input = TextInput::new(window, cx);
+            input.set_text("https://google.com", window, cx);
             input
         });
 
@@ -48,7 +48,7 @@ impl WebViewStory {
             view.load_url(&url);
         });
 
-        cx.new_view(|cx| {
+        cx.new(|cx| {
             let this = WebViewStory {
                 focus_handle,
                 webview,
@@ -73,26 +73,26 @@ impl WebViewStory {
         })
     }
 
-    pub fn hide(&self, cx: &mut WindowContext) {
+    pub fn hide(&self, _: &mut Window, cx: &mut App) {
         self.webview.update(cx, |webview, _| webview.hide())
     }
 
     #[allow(unused)]
-    fn go_back(&mut self, _: &ClickEvent, cx: &mut ViewContext<Self>) {
+    fn go_back(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         self.webview.update(cx, |webview, _| {
             webview.back().unwrap();
         });
     }
 }
 
-impl FocusableView for WebViewStory {
-    fn focus_handle(&self, _cx: &gpui::AppContext) -> FocusHandle {
+impl Focusable for WebViewStory {
+    fn focus_handle(&self, _cx: &gpui::App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl Render for WebViewStory {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let webview = self.webview.clone();
         let address_input = self.address_input.clone();
 

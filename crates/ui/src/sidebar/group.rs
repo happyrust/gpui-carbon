@@ -1,7 +1,7 @@
 use crate::{v_flex, ActiveTheme, Collapsible};
 use gpui::{
-    div, prelude::FluentBuilder as _, Div, IntoElement, ParentElement, RenderOnce, SharedString,
-    Styled as _, WindowContext,
+    div, prelude::FluentBuilder as _, App, Div, IntoElement, ParentElement, RenderOnce,
+    SharedString, Styled as _, Window,
 };
 
 /// A sidebar group
@@ -44,7 +44,7 @@ impl<E: Collapsible + IntoElement> Collapsible for SidebarGroup<E> {
     }
 }
 impl<E: Collapsible + IntoElement> RenderOnce for SidebarGroup<E> {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         v_flex()
             .relative()
             .p_2()

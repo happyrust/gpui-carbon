@@ -2,8 +2,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    div, px, size, Entity, InteractiveElement, IntoElement, ParentElement, Pixels, Render,
-    ScrollHandle, SharedString, Size, Styled, View, ViewContext, VisualContext, WindowContext,
+    div, px, size, App, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement,
+    ParentElement, Pixels, Render, ScrollHandle, SharedString, Size, Styled, Window,
 };
 use ui::button::Button;
 use ui::divider::Divider;
@@ -27,7 +27,7 @@ pub struct ScrollableStory {
 const ITEM_HEIGHT: Pixels = px(30.);
 
 impl ScrollableStory {
-    fn new(cx: &mut ViewContext<Self>) -> Self {
+    fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         let items = (0..5000).map(|i| format!("Item {}", i)).collect::<Vec<_>>();
         let test_width = px(3000.);
         let item_sizes = items
@@ -48,11 +48,11 @@ impl ScrollableStory {
         }
     }
 
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::new)
+    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(window, cx))
     }
 
-    pub fn change_test_cases(&mut self, n: usize, cx: &mut ViewContext<Self>) {
+    pub fn change_test_cases(&mut self, n: usize, cx: &mut Context<Self>) {
         if n == 0 {
             self.items = (0..5000).map(|i| format!("Item {}", i)).collect::<Vec<_>>();
             self.test_width = px(3000.);
@@ -79,17 +79,17 @@ impl ScrollableStory {
         cx.notify();
     }
 
-    pub fn change_axis(&mut self, axis: ScrollbarAxis, cx: &mut ViewContext<Self>) {
+    pub fn change_axis(&mut self, axis: ScrollbarAxis, cx: &mut Context<Self>) {
         self.axis = axis;
         cx.notify();
     }
 
-    fn set_message(&mut self, msg: &str, cx: &mut ViewContext<Self>) {
+    fn set_message(&mut self, msg: &str, cx: &mut Context<Self>) {
         self.message = SharedString::from(msg.to_string());
         cx.notify();
     }
 
-    fn render_buttons(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render_buttons(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .gap_2()
             .justify_between()
@@ -97,22 +97,22 @@ impl ScrollableStory {
                 h_flex()
                     .gap_2()
                     .child(Button::new("test-0").label("Size 0").on_click(cx.listener(
-                        |view, _, cx| {
+                        |view, _, _, cx| {
                             view.change_test_cases(0, cx);
                         },
                     )))
                     .child(Button::new("test-1").label("Size 1").on_click(cx.listener(
-                        |view, _, cx| {
+                        |view, _, _, cx| {
                             view.change_test_cases(1, cx);
                         },
                     )))
                     .child(Button::new("test-2").label("Size 2").on_click(cx.listener(
-                        |view, _, cx| {
+                        |view, _, _, cx| {
                             view.change_test_cases(2, cx);
                         },
                     )))
                     .child(Button::new("test-3").label("Size 3").on_click(cx.listener(
-                        |view, _, cx| {
+                        |view, _, _, cx| {
                             view.change_test_cases(3, cx);
                         },
                     )))
@@ -120,23 +120,21 @@ impl ScrollableStory {
                     .child(
                         Button::new("test-axis-both")
                             .label("Both Scrollbar")
-                            .on_click(
-                                cx.listener(|view, _, cx| {
-                                    view.change_axis(ScrollbarAxis::Both, cx)
-                                }),
-                            ),
+                            .on_click(cx.listener(|view, _, _, cx| {
+                                view.change_axis(ScrollbarAxis::Both, cx)
+                            })),
                     )
                     .child(
                         Button::new("test-axis-vertical")
                             .label("Vertical")
-                            .on_click(cx.listener(|view, _, cx| {
+                            .on_click(cx.listener(|view, _, _, cx| {
                                 view.change_axis(ScrollbarAxis::Vertical, cx)
                             })),
                     )
                     .child(
                         Button::new("test-axis-horizontal")
                             .label("Horizontal")
-                            .on_click(cx.listener(|view, _, cx| {
+                            .on_click(cx.listener(|view, _, _, cx| {
                                 view.change_axis(ScrollbarAxis::Horizontal, cx)
                             })),
                     ),
@@ -155,20 +153,24 @@ impl super::Story for ScrollableStory {
         and use `virtual_list` to render a large number of items."
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
-        Self::view(cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
+        Self::view(window, cx)
     }
 }
 
-impl gpui::FocusableView for ScrollableStory {
-    fn focus_handle(&self, _: &gpui::AppContext) -> gpui::FocusHandle {
+impl Focusable for ScrollableStory {
+    fn focus_handle(&self, _: &gpui::App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl Render for ScrollableStory {
-    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl gpui::IntoElement {
-        let view = cx.view().clone();
+    fn render(
+        &mut self,
+        _: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        let view = cx.model().clone();
 
         v_flex()
             .size_full()
@@ -183,10 +185,10 @@ impl Render for ScrollableStory {
                             .size_full()
                             .child(
                                 v_virtual_list(
-                                    cx.view().clone(),
+                                    cx.model().clone(),
                                     "items",
                                     self.item_sizes.clone(),
-                                    move |story, visible_range, content_size, cx| {
+                                    move |story, visible_range, content_size, _, cx| {
                                         story.set_message(
                                             &format!("visible_range: {:?}", visible_range),
                                             cx,
@@ -268,7 +270,7 @@ impl Render for ScrollableStory {
                             .p_3()
                             .w(self.test_width)
                             .id("test-1")
-                            .scrollable(cx.view().entity_id(), ScrollbarAxis::Vertical)
+                            .scrollable(cx.model().entity_id(), ScrollbarAxis::Vertical)
                             .gap_1()
                             .child("Scrollable Example")
                             .children(self.items.iter().take(500).map(|item| {

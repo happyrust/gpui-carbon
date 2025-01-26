@@ -1,6 +1,6 @@
 use gpui::{
-    div, prelude::FluentBuilder, px, relative, AnyElement, Div, IntoElement, ParentElement,
-    RenderOnce, Styled, WindowContext,
+    div, prelude::FluentBuilder, px, relative, AnyElement, App, Div, IntoElement, ParentElement,
+    RenderOnce, Styled, Window,
 };
 
 use crate::{h_flex, red_500, white};
@@ -53,7 +53,7 @@ impl ParentElement for Badge {
 }
 
 impl RenderOnce for Badge {
-    fn render(self, _: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         self.base.relative().when(self.count > 0, |this| {
             this.child(
                 h_flex()

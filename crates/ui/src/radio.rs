@@ -2,8 +2,9 @@ use std::rc::Rc;
 
 use crate::{h_flex, v_flex, ActiveTheme, AxisExt, IconName};
 use gpui::{
-    div, prelude::FluentBuilder, relative, svg, Axis, ElementId, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, WindowContext,
+    div, prelude::FluentBuilder, relative, svg, App, Axis, ElementId, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    Window,
 };
 
 /// A Radio element.
@@ -15,7 +16,7 @@ pub struct Radio {
     label: Option<SharedString>,
     checked: bool,
     disabled: bool,
-    on_click: Option<Box<dyn Fn(&bool, &mut WindowContext) + 'static>>,
+    on_click: Option<Box<dyn Fn(&bool, &mut Window, &mut App) + 'static>>,
 }
 
 impl Radio {
@@ -44,14 +45,14 @@ impl Radio {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&bool, &mut WindowContext) + 'static) -> Self {
+    pub fn on_click(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
         self
     }
 }
 
 impl RenderOnce for Radio {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let color = if self.disabled {
             cx.theme().primary.opacity(0.5)
         } else {
@@ -104,8 +105,8 @@ impl RenderOnce for Radio {
                 .when_some(
                     self.on_click.filter(|_| !self.disabled),
                     |this, on_click| {
-                        this.on_click(move |_event, cx| {
-                            on_click(&!self.checked, cx);
+                        this.on_click(move |_event, window, cx| {
+                            on_click(&!self.checked, window, cx);
                         })
                     },
                 ),
@@ -138,7 +139,7 @@ pub struct RadioGroup {
     layout: Axis,
     selected_index: Option<usize>,
     disabled: bool,
-    on_change: Option<Rc<dyn Fn(&usize, &mut WindowContext) + 'static>>,
+    on_change: Option<Rc<dyn Fn(&usize, &mut Window, &mut App) + 'static>>,
 }
 
 impl RadioGroup {
@@ -169,7 +170,7 @@ impl RadioGroup {
     }
 
     /// Listen to the change event.
-    pub fn on_change(mut self, handler: impl Fn(&usize, &mut WindowContext) + 'static) -> Self {
+    pub fn on_change(mut self, handler: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Rc::new(handler));
         self
     }
@@ -200,7 +201,7 @@ impl RadioGroup {
 }
 
 impl RenderOnce for RadioGroup {
-    fn render(self, _: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let on_change = self.on_change;
         let disabled = self.disabled;
         let selected_ix = self.selected_index;
@@ -219,8 +220,8 @@ impl RenderOnce for RadioGroup {
                     radio.disabled(disabled).checked(checked).when_some(
                         on_change.clone(),
                         |this, on_change| {
-                            this.on_click(move |_, cx| {
-                                on_change(&ix, cx);
+                            this.on_click(move |_, window, cx| {
+                                on_change(&ix, window, cx);
                             })
                         },
                     )

@@ -1,9 +1,9 @@
 use std::rc::{Rc, Weak};
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, AlignItems, AnyElement, AnyView, Axis, Div, Element,
+    div, prelude::FluentBuilder as _, px, AlignItems, AnyElement, AnyView, App, Axis, Div, Element,
     ElementId, FocusHandle, InteractiveElement as _, IntoElement, ParentElement, Pixels, Rems,
-    RenderOnce, SharedString, Styled, WindowContext,
+    RenderOnce, SharedString, Styled, Window,
 };
 
 use crate::{h_flex, v_flex, ActiveTheme as _, AxisExt, FocusableCycle, Sizable, Size, StyledExt};
@@ -114,7 +114,7 @@ impl Sizable for Form {
 }
 
 impl FocusableCycle for Form {
-    fn cycle_focus_handles(&self, _: &mut WindowContext) -> Vec<FocusHandle>
+    fn cycle_focus_handles(&self, _window: &mut Window, _cx: &mut App) -> Vec<FocusHandle>
     where
         Self: Sized,
     {
@@ -127,7 +127,7 @@ impl FocusableCycle for Form {
 
 pub enum FieldBuilder {
     String(SharedString),
-    Element(Rc<dyn Fn(&mut WindowContext) -> AnyElement>),
+    Element(Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>),
     View(AnyView),
 }
 
@@ -144,10 +144,10 @@ impl From<AnyView> for FieldBuilder {
 }
 
 impl RenderOnce for FieldBuilder {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         match self {
             FieldBuilder::String(value) => value.into_any_element(),
-            FieldBuilder::Element(builder) => builder(cx),
+            FieldBuilder::Element(builder) => builder(window, cx),
             FieldBuilder::View(view) => view.into_any(),
         }
     }
@@ -225,10 +225,10 @@ impl FormField {
     pub fn label_fn<F, E>(mut self, label: F) -> Self
     where
         E: IntoElement,
-        F: Fn(&mut WindowContext) -> E + 'static,
+        F: Fn(&mut Window, &mut App) -> E + 'static,
     {
-        self.label = Some(FieldBuilder::Element(Rc::new(move |cx| {
-            label(cx).into_any_element()
+        self.label = Some(FieldBuilder::Element(Rc::new(move |window, cx| {
+            label(window, cx).into_any_element()
         })));
         self
     }
@@ -243,10 +243,10 @@ impl FormField {
     pub fn description_fn<F, E>(mut self, description: F) -> Self
     where
         E: IntoElement,
-        F: Fn(&mut WindowContext) -> E + 'static,
+        F: Fn(&mut Window, &mut App) -> E + 'static,
     {
-        self.description = Some(FieldBuilder::Element(Rc::new(move |cx| {
-            description(cx).into_any_element()
+        self.description = Some(FieldBuilder::Element(Rc::new(move |window, cx| {
+            description(window, cx).into_any_element()
         })));
         self
     }
@@ -310,7 +310,7 @@ impl ParentElement for FormField {
 }
 
 impl RenderOnce for FormField {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let layout = self.props.layout;
 
         let label_width = if layout.is_vertical() {
@@ -379,9 +379,14 @@ impl RenderOnce for FormField {
                                 .gap_1()
                                 .items_center()
                                 .when_some(self.label, |this, builder| {
-                                    this.child(builder.render(cx)).when(self.required, |this| {
-                                        this.child(div().text_color(cx.theme().danger).child("*"))
-                                    })
+                                    this.child(builder.render(window, cx)).when(
+                                        self.required,
+                                        |this| {
+                                            this.child(
+                                                div().text_color(cx.theme().danger).child("*"),
+                                            )
+                                        },
+                                    )
                                 }),
                         )
                     })
@@ -402,14 +407,14 @@ impl RenderOnce for FormField {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(builder.render(cx)),
+                                .child(builder.render(window, cx)),
                         )
                     }),
             )
     }
 }
 impl RenderOnce for Form {
-    fn render(self, _: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let props = self.props;
 
         let gap = match props.size {

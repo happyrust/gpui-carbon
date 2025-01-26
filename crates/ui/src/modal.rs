@@ -2,9 +2,9 @@ use std::{rc::Rc, time::Duration};
 
 use gpui::{
     actions, anchored, div, hsla, point, prelude::FluentBuilder, px, relative, Animation,
-    AnimationExt as _, AnyElement, AppContext, Bounds, ClickEvent, Div, FocusHandle, Hsla,
+    AnimationExt as _, AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, Hsla,
     InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point,
-    RenderOnce, SharedString, Styled, WindowContext,
+    RenderOnce, SharedString, Styled, Window,
 };
 use rust_i18n::t;
 
@@ -17,15 +17,16 @@ use crate::{
 actions!(modal, [Escape, Enter]);
 
 const CONTEXT: &str = "Modal";
-pub fn init(cx: &mut AppContext) {
+pub fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", Escape, Some(CONTEXT)),
         KeyBinding::new("enter", Enter, Some(CONTEXT)),
     ]);
 }
 
-type RenderButtonFn = Box<dyn FnOnce(&mut WindowContext) -> AnyElement>;
-type FooterFn = Box<dyn Fn(RenderButtonFn, RenderButtonFn, &mut WindowContext) -> Vec<AnyElement>>;
+type RenderButtonFn = Box<dyn FnOnce(&mut Window, &mut App) -> AnyElement>;
+type FooterFn =
+    Box<dyn Fn(RenderButtonFn, RenderButtonFn, &mut Window, &mut App) -> Vec<AnyElement>>;
 
 /// Modal button props.
 pub struct ModalButtonProps {
@@ -82,9 +83,9 @@ pub struct Modal {
     max_width: Option<Pixels>,
     margin_top: Option<Pixels>,
 
-    on_close: Rc<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>,
-    on_ok: Rc<dyn Fn(&ClickEvent, &mut WindowContext) -> bool + 'static>,
-    on_cancel: Rc<dyn Fn(&ClickEvent, &mut WindowContext) -> bool + 'static>,
+    on_close: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>,
+    on_ok: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) -> bool + 'static>,
+    on_cancel: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) -> bool + 'static>,
     button_props: ModalButtonProps,
     show_close: bool,
     overlay: bool,
@@ -97,7 +98,7 @@ pub struct Modal {
     pub(crate) overlay_visible: bool,
 }
 
-pub(crate) fn overlay_color(overlay: bool, cx: &WindowContext) -> Hsla {
+pub(crate) fn overlay_color(overlay: bool, _: &Window, cx: &App) -> Hsla {
     if !overlay {
         return hsla(0., 0., 0., 0.);
     }
@@ -110,7 +111,7 @@ pub(crate) fn overlay_color(overlay: bool, cx: &WindowContext) -> Hsla {
 }
 
 impl Modal {
-    pub fn new(cx: &mut WindowContext) -> Self {
+    pub fn new(_: &mut Window, cx: &mut App) -> Self {
         let base = v_flex()
             .bg(cx.theme().background)
             .border_1()
@@ -134,9 +135,9 @@ impl Modal {
             keyboard: true,
             layer_ix: 0,
             overlay_visible: true,
-            on_close: Rc::new(|_, _| {}),
-            on_ok: Rc::new(|_, _| true),
-            on_cancel: Rc::new(|_, _| true),
+            on_close: Rc::new(|_, _, _| {}),
+            on_ok: Rc::new(|_, _, _| true),
+            on_cancel: Rc::new(|_, _, _| true),
             button_props: ModalButtonProps::default(),
             show_close: true,
             overlay_closable: true,
@@ -160,10 +161,10 @@ impl Modal {
     pub fn footer<E, F>(mut self, footer: F) -> Self
     where
         E: IntoElement,
-        F: Fn(RenderButtonFn, RenderButtonFn, &mut WindowContext) -> Vec<E> + 'static,
+        F: Fn(RenderButtonFn, RenderButtonFn, &mut Window, &mut App) -> Vec<E> + 'static,
     {
-        self.footer = Some(Box::new(move |ok, cancel, cx| {
-            footer(ok, cancel, cx)
+        self.footer = Some(Box::new(move |ok, cancel, window, cx| {
+            footer(ok, cancel, window, cx)
                 .into_iter()
                 .map(|e| e.into_any_element())
                 .collect()
@@ -173,7 +174,7 @@ impl Modal {
 
     /// Set to use confirm modal, with OK and CANCEL buttons.
     pub fn confirm(self) -> Self {
-        self.footer(|ok, cancel, cx| vec![cancel(cx), ok(cx)])
+        self.footer(|ok, cancel, window, cx| vec![cancel(window, cx), ok(window, cx)])
             .overlay_closable(false)
             .show_close(false)
     }
@@ -187,7 +188,7 @@ impl Modal {
     /// Sets the callback for when the modal is closed.
     pub fn on_close(
         mut self,
-        on_close: impl Fn(&ClickEvent, &mut WindowContext) + 'static,
+        on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_close = Rc::new(on_close);
         self
@@ -198,7 +199,7 @@ impl Modal {
     /// The callback should return `true` to close the modal, if return `false` the modal will not be closed.
     pub fn on_ok(
         mut self,
-        on_ok: impl Fn(&ClickEvent, &mut WindowContext) -> bool + 'static,
+        on_ok: impl Fn(&ClickEvent, &mut Window, &mut App) -> bool + 'static,
     ) -> Self {
         self.on_ok = Rc::new(on_ok);
         self
@@ -209,7 +210,7 @@ impl Modal {
     /// The callback should return `true` to close the modal, if return `false` the modal will not be closed.
     pub fn on_cancel(
         mut self,
-        on_cancel: impl Fn(&ClickEvent, &mut WindowContext) -> bool + 'static,
+        on_cancel: impl Fn(&ClickEvent, &mut Window, &mut App) -> bool + 'static,
     ) -> Self {
         self.on_cancel = Rc::new(on_cancel);
         self
@@ -277,7 +278,7 @@ impl Styled for Modal {
 }
 
 impl RenderOnce for Modal {
-    fn render(self, cx: &mut WindowContext) -> impl gpui::IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl gpui::IntoElement {
         let layer_ix = self.layer_ix;
         let on_close = self.on_close.clone();
         let on_ok = self.on_ok.clone();
@@ -291,7 +292,7 @@ impl RenderOnce for Modal {
                 .ok_text
                 .unwrap_or_else(|| t!("Modal.ok").into());
             let ok_variant = self.button_props.ok_variant;
-            move |_| {
+            move |_, _| {
                 Button::new("ok")
                     .label(ok_text)
                     .with_variant(ok_variant)
@@ -299,10 +300,10 @@ impl RenderOnce for Modal {
                         let on_ok = on_ok.clone();
                         let on_close = on_close.clone();
 
-                        move |_, cx| {
-                            if on_ok(&ClickEvent::default(), cx) {
-                                on_close(&ClickEvent::default(), cx);
-                                cx.close_modal();
+                        move |_, window, cx| {
+                            if on_ok(&ClickEvent::default(), window, cx) {
+                                on_close(&ClickEvent::default(), window, cx);
+                                window.close_modal(cx);
                             }
                         }
                     })
@@ -317,17 +318,17 @@ impl RenderOnce for Modal {
                 .cancel_text
                 .unwrap_or_else(|| t!("Modal.cancel").into());
             let cancel_variant = self.button_props.cancel_variant;
-            move |_| {
+            move |_, _| {
                 Button::new("cancel")
                     .label(cancel_text)
                     .with_variant(cancel_variant)
                     .on_click({
                         let on_cancel = on_cancel.clone();
                         let on_close = on_close.clone();
-                        move |_, cx| {
-                            if on_cancel(&ClickEvent::default(), cx) {
-                                on_close(&ClickEvent::default(), cx);
-                                cx.close_modal();
+                        move |_, window, cx| {
+                            if on_cancel(&ClickEvent::default(), window, cx) {
+                                on_close(&ClickEvent::default(), window, cx);
+                                window.close_modal(cx);
                             }
                         }
                     })
@@ -335,8 +336,8 @@ impl RenderOnce for Modal {
             }
         });
 
-        let window_paddings = crate::window_border::window_paddings(cx);
-        let view_size = cx.viewport_size()
+        let window_paddings = crate::window_border::window_paddings(window);
+        let view_size = window.viewport_size()
             - gpui::size(
                 window_paddings.left + window_paddings.right,
                 window_paddings.top + window_paddings.bottom,
@@ -358,16 +359,16 @@ impl RenderOnce for Modal {
                     .w(view_size.width)
                     .h(view_size.height)
                     .when(self.overlay_visible, |this| {
-                        this.bg(overlay_color(self.overlay, cx))
+                        this.bg(overlay_color(self.overlay, window, cx))
                     })
                     .when(self.overlay_closable, |this| {
                         this.on_mouse_down(MouseButton::Left, {
                             let on_cancel = on_cancel.clone();
                             let on_close = on_close.clone();
-                            move |_, cx| {
-                                on_cancel(&ClickEvent::default(), cx);
-                                on_close(&ClickEvent::default(), cx);
-                                cx.close_modal();
+                            move |_, window, cx| {
+                                on_cancel(&ClickEvent::default(), window, cx);
+                                on_close(&ClickEvent::default(), window, cx);
+                                window.close_modal(cx);
                             }
                         })
                     })
@@ -380,23 +381,23 @@ impl RenderOnce for Modal {
                                 this.on_action({
                                     let on_cancel = on_cancel.clone();
                                     let on_close = on_close.clone();
-                                    move |_: &Escape, cx| {
+                                    move |_: &Escape, window, cx| {
                                         // FIXME:
                                         //
                                         // Here some Modal have no focus_handle, so it will not work will Escape key.
                                         // But by now, we `cx.close_modal()` going to close the last active model, so the Escape is unexpected to work.
-                                        on_cancel(&ClickEvent::default(), cx);
-                                        on_close(&ClickEvent::default(), cx);
-                                        cx.close_modal();
+                                        on_cancel(&ClickEvent::default(), window, cx);
+                                        on_close(&ClickEvent::default(), window, cx);
+                                        window.close_modal(cx);
                                     }
                                 })
                                 .on_action({
                                     let on_ok = on_ok.clone();
                                     let on_close = on_close.clone();
-                                    move |_: &Enter, cx| {
-                                        if on_ok(&ClickEvent::default(), cx) {
-                                            on_close(&ClickEvent::default(), cx);
-                                            cx.close_modal();
+                                    move |_: &Enter, window, cx| {
+                                        if on_ok(&ClickEvent::default(), window, cx) {
+                                            on_close(&ClickEvent::default(), window, cx);
+                                            window.close_modal(cx);
                                         }
                                     }
                                 })
@@ -423,10 +424,10 @@ impl RenderOnce for Modal {
                                     .ghost()
                                     .icon(IconName::Close)
                                     .on_click(
-                                        move |_, cx| {
-                                            on_cancel(&ClickEvent::default(), cx);
-                                            on_close(&ClickEvent::default(), cx);
-                                            cx.close_modal();
+                                        move |_, window, cx| {
+                                            on_cancel(&ClickEvent::default(), window, cx);
+                                            on_close(&ClickEvent::default(), window, cx);
+                                            window.close_modal(cx);
                                         },
                                     ),
                                 )
@@ -438,6 +439,7 @@ impl RenderOnce for Modal {
                                 this.child(h_flex().gap_2().justify_end().children(footer(
                                     render_ok,
                                     render_cancel,
+                                    window,
                                     cx,
                                 )))
                             })

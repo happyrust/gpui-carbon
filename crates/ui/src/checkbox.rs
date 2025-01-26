@@ -1,8 +1,8 @@
 use crate::{h_flex, v_flex, ActiveTheme, Disableable, IconName, Selectable};
 use gpui::{
-    div, prelude::FluentBuilder as _, relative, svg, ElementId, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _, Styled as _,
-    WindowContext,
+    div, prelude::FluentBuilder as _, relative, svg, App, ElementId, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Window,
 };
 
 /// A Checkbox element.
@@ -12,7 +12,7 @@ pub struct Checkbox {
     label: Option<SharedString>,
     checked: bool,
     disabled: bool,
-    on_click: Option<Box<dyn Fn(&bool, &mut WindowContext) + 'static>>,
+    on_click: Option<Box<dyn Fn(&bool, &mut Window, &mut App) + 'static>>,
 }
 
 impl Checkbox {
@@ -36,7 +36,7 @@ impl Checkbox {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&bool, &mut WindowContext) + 'static) -> Self {
+    pub fn on_click(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
         self
     }
@@ -60,7 +60,7 @@ impl Selectable for Checkbox {
 }
 
 impl RenderOnce for Checkbox {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let (color, icon_color) = if self.disabled {
             (
                 cx.theme().primary.opacity(0.5),
@@ -123,9 +123,9 @@ impl RenderOnce for Checkbox {
                 .when_some(
                     self.on_click.filter(|_| !self.disabled),
                     |this, on_click| {
-                        this.on_click(move |_, cx| {
+                        this.on_click(move |_, window, cx| {
                             let checked = !self.checked;
-                            on_click(&checked, cx);
+                            on_click(&checked, window, cx);
                         })
                     },
                 ),

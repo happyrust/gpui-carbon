@@ -1,6 +1,6 @@
 use gpui::{
-    div, CursorStyle, InteractiveElement, ParentElement, Render, StatefulInteractiveElement,
-    Styled, View, ViewContext, VisualContext as _, WindowContext,
+    div, App, AppContext, Context, CursorStyle, Entity, Focusable, InteractiveElement,
+    ParentElement, Render, StatefulInteractiveElement, Styled, Window,
 };
 
 use ui::{
@@ -18,11 +18,11 @@ pub struct TooltipStory {
 }
 
 impl TooltipStory {
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::new)
+    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(window, cx))
     }
 
-    fn new(cx: &mut ViewContext<Self>) -> Self {
+    fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
         }
@@ -34,21 +34,25 @@ impl super::Story for TooltipStory {
         "Tooltip"
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
-        Self::view(cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
+        Self::view(window, cx)
     }
 
     fn zoomable() -> Option<PanelControl> {
         None
     }
 }
-impl gpui::FocusableView for TooltipStory {
-    fn focus_handle(&self, _: &gpui::AppContext) -> gpui::FocusHandle {
+impl Focusable for TooltipStory {
+    fn focus_handle(&self, _: &gpui::App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 impl Render for TooltipStory {
-    fn render(&mut self, _: &mut gpui::ViewContext<Self>) -> impl gpui::IntoElement {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        _cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
         v_flex()
             .p_4()
             .gap_5()
@@ -61,7 +65,7 @@ impl Render for TooltipStory {
                             .with_variant(ButtonVariant::Primary),
                     )
                     .id("tooltip-1")
-                    .tooltip(|cx| Tooltip::new("This is a Button", cx)),
+                    .tooltip(|window, cx| Tooltip::new("This is a Button", window, cx)),
             )
             .child(
                 h_flex()
@@ -69,14 +73,14 @@ impl Render for TooltipStory {
                     .cursor(CursorStyle::PointingHand)
                     .child(Label::new("Hover me"))
                     .id("tooltip-3")
-                    .tooltip(|cx| Tooltip::new("This is a Label", cx)),
+                    .tooltip(|window, cx| Tooltip::new("This is a Label", window, cx)),
             )
             .child(
                 div()
                     .cursor(CursorStyle::PointingHand)
                     .child(Checkbox::new("check").label("Remember me").checked(true))
                     .id("tooltip-4")
-                    .tooltip(|cx| Tooltip::new("Checked!", cx)),
+                    .tooltip(|window, cx| Tooltip::new("Checked!", window, cx)),
             )
     }
 }

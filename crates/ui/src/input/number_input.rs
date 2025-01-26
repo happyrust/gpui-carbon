@@ -1,7 +1,7 @@
 use gpui::{
-    actions, px, AppContext, EventEmitter, FocusHandle, FocusableView, InteractiveElement,
-    IntoElement, KeyBinding, ParentElement, Pixels, Render, SharedString, Styled, Subscription,
-    View, ViewContext, VisualContext,
+    actions, px, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyBinding, ParentElement, Pixels, Render, SharedString,
+    Styled, Subscription, Window,
 };
 use regex::Regex;
 
@@ -17,7 +17,7 @@ actions!(number_input, [Increment, Decrement]);
 
 const KEY_CONTENT: &str = "NumberInput";
 
-pub fn init(cx: &mut AppContext) {
+pub fn init(cx: &mut App) {
     cx.bind_keys(vec![
         KeyBinding::new("up", Increment, Some(KEY_CONTENT)),
         KeyBinding::new("down", Decrement, Some(KEY_CONTENT)),
@@ -25,18 +25,22 @@ pub fn init(cx: &mut AppContext) {
 }
 
 pub struct NumberInput {
-    input: View<TextInput>,
+    input: Entity<TextInput>,
     size: Size,
     _subscriptions: Vec<Subscription>,
     _synced_size: bool,
 }
 
 impl NumberInput {
-    pub fn new(cx: &mut ViewContext<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         // Default pattern for the number input.
         let pattern = Regex::new(r"^-?(\d+)?\.?(\d+)?$").unwrap();
 
-        let input = cx.new_view(|cx| TextInput::new(cx).pattern(pattern).appearance(false));
+        let input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .pattern(pattern)
+                .appearance(false)
+        });
 
         let _subscriptions = vec![cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
             cx.emit(NumberInputEvent::Input(event.clone()));
@@ -53,55 +57,67 @@ impl NumberInput {
     pub fn placeholder(
         self,
         placeholder: impl Into<SharedString>,
-        cx: &mut ViewContext<Self>,
+        _: &mut Window,
+        cx: &mut Context<Self>,
     ) -> Self {
         self.input
             .update(cx, |input, _| input.set_placeholder(placeholder));
         self
     }
 
-    pub fn set_size(&mut self, size: Size, cx: &mut ViewContext<Self>) {
+    pub fn set_size(&mut self, size: Size, window: &mut Window, cx: &mut Context<Self>) {
         self.size = size;
-        self.sync_size_to_input_if_needed(cx);
+        self.sync_size_to_input_if_needed(window, cx);
     }
 
-    pub fn set_placeholder(&self, text: impl Into<SharedString>, cx: &mut ViewContext<Self>) {
+    pub fn set_placeholder(
+        &self,
+        text: impl Into<SharedString>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.input.update(cx, |input, _| {
             input.set_placeholder(text);
         });
     }
 
-    pub fn pattern(self, pattern: regex::Regex, cx: &mut ViewContext<Self>) -> Self {
+    pub fn pattern(self, pattern: regex::Regex, _: &mut Window, cx: &mut Context<Self>) -> Self {
         self.input.update(cx, |input, _| input.set_pattern(pattern));
         self
     }
 
-    pub fn set_value(&self, text: impl Into<SharedString>, cx: &mut ViewContext<Self>) {
-        self.input.update(cx, |input, cx| input.set_text(text, cx))
-    }
-
-    pub fn set_disabled(&self, disabled: bool, cx: &mut ViewContext<Self>) {
+    pub fn set_value(
+        &self,
+        text: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.input
-            .update(cx, |input, cx| input.set_disabled(disabled, cx));
+            .update(cx, |input, cx| input.set_text(text, window, cx))
     }
 
-    pub fn increment(&mut self, cx: &mut ViewContext<Self>) {
-        self.on_action_increment(&Increment, cx);
+    pub fn set_disabled(&self, disabled: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.input
+            .update(cx, |input, cx| input.set_disabled(disabled, window, cx));
     }
 
-    pub fn decrement(&mut self, cx: &mut ViewContext<Self>) {
-        self.on_action_decrement(&Decrement, cx);
+    pub fn increment(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.on_action_increment(&Increment, window, cx);
     }
 
-    fn on_action_increment(&mut self, _: &Increment, cx: &mut ViewContext<Self>) {
-        self.on_step(StepAction::Increment, cx);
+    pub fn decrement(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.on_action_decrement(&Decrement, window, cx);
     }
 
-    fn on_action_decrement(&mut self, _: &Decrement, cx: &mut ViewContext<Self>) {
-        self.on_step(StepAction::Decrement, cx);
+    fn on_action_increment(&mut self, _: &Increment, window: &mut Window, cx: &mut Context<Self>) {
+        self.on_step(StepAction::Increment, window, cx);
     }
 
-    fn on_step(&mut self, action: StepAction, cx: &mut ViewContext<Self>) {
+    fn on_action_decrement(&mut self, _: &Decrement, window: &mut Window, cx: &mut Context<Self>) {
+        self.on_step(StepAction::Decrement, window, cx);
+    }
+
+    fn on_step(&mut self, action: StepAction, _: &mut Window, cx: &mut Context<Self>) {
         if self.input.read(cx).disabled {
             return;
         }
@@ -109,17 +125,17 @@ impl NumberInput {
         cx.emit(NumberInputEvent::Step(action));
     }
 
-    fn sync_size_to_input_if_needed(&mut self, cx: &mut ViewContext<Self>) {
+    fn sync_size_to_input_if_needed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self._synced_size {
             self.input
-                .update(cx, |input, cx| input.set_size(self.size, cx));
+                .update(cx, |input, cx| input.set_size(self.size, window, cx));
             self._synced_size = true;
         }
     }
 }
 
-impl FocusableView for NumberInput {
-    fn focus_handle(&self, cx: &AppContext) -> FocusHandle {
+impl Focusable for NumberInput {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
         self.input.focus_handle(cx)
     }
 }
@@ -142,11 +158,11 @@ impl Sizable for NumberInput {
     }
 }
 impl Render for NumberInput {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let focused = self.input.focus_handle(cx).is_focused(cx);
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let focused = self.input.focus_handle(cx).is_focused(window);
 
         // Sync size to input at first.
-        self.sync_size_to_input_if_needed(cx);
+        self.sync_size_to_input_if_needed(window, cx);
         const BUTTON_OFFSET: Pixels = px(-3.);
         let btn_size = match self.size {
             Size::XSmall | Size::Small => Size::XSmall,
@@ -170,7 +186,9 @@ impl Render for NumberInput {
                     .with_size(btn_size)
                     .ml(BUTTON_OFFSET)
                     .icon(IconName::Minus)
-                    .on_click(cx.listener(|this, _, cx| this.on_step(StepAction::Decrement, cx))),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.on_step(StepAction::Decrement, window, cx)
+                    })),
             )
             .child(self.input.clone())
             .child(
@@ -179,7 +197,9 @@ impl Render for NumberInput {
                     .with_size(btn_size)
                     .mr(BUTTON_OFFSET)
                     .icon(IconName::Plus)
-                    .on_click(cx.listener(|this, _, cx| this.on_step(StepAction::Increment, cx))),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.on_step(StepAction::Increment, window, cx)
+                    })),
             )
     }
 }

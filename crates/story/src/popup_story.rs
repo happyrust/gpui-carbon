@@ -1,8 +1,7 @@
 use gpui::{
-    actions, div, impl_internal_actions, px, AppContext, Corner, DismissEvent, Element,
-    EventEmitter, FocusHandle, FocusableView, InteractiveElement, IntoElement, KeyBinding,
-    MouseButton, ParentElement as _, Render, SharedString, Styled as _, View, ViewContext,
-    VisualContext, WindowContext,
+    actions, div, impl_internal_actions, px, App, AppContext, Context, Corner, DismissEvent,
+    Element, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement,
+    KeyBinding, MouseButton, ParentElement as _, Render, SharedString, Styled as _, Window,
 };
 use serde::Deserialize;
 use ui::{
@@ -26,7 +25,7 @@ actions!(
 );
 impl_internal_actions!(popover_story, [Info]);
 
-pub fn init(cx: &mut AppContext) {
+pub fn init(cx: &mut App) {
     cx.bind_keys([
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-c", Copy, None),
@@ -48,19 +47,19 @@ pub fn init(cx: &mut AppContext) {
 }
 
 struct Form {
-    input1: View<TextInput>,
+    input1: Entity<TextInput>,
 }
 
 impl Form {
-    fn new(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(|cx| Self {
-            input1: cx.new_view(TextInput::new),
+    fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self {
+            input1: cx.new(|cx| TextInput::new(window, cx)),
         })
     }
 }
 
-impl FocusableView for Form {
-    fn focus_handle(&self, cx: &AppContext) -> FocusHandle {
+impl Focusable for Form {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
         self.input1.focus_handle(cx)
     }
 }
@@ -68,7 +67,7 @@ impl FocusableView for Form {
 impl EventEmitter<DismissEvent> for Form {}
 
 impl Render for Form {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .gap_4()
             .p_4()
@@ -79,14 +78,14 @@ impl Render for Form {
                 Button::new("submit")
                     .label("Submit")
                     .primary()
-                    .on_click(cx.listener(|_, _, cx| cx.emit(DismissEvent))),
+                    .on_click(cx.listener(|_, _, _, cx| cx.emit(DismissEvent))),
             )
     }
 }
 
 pub struct PopupStory {
     focus_handle: FocusHandle,
-    form: View<Form>,
+    form: Entity<Form>,
     message: String,
     window_mode: bool,
 }
@@ -100,18 +99,18 @@ impl super::Story for PopupStory {
         "A popup displays content on top of the main page."
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
-        Self::view(cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
+        Self::view(window, cx)
     }
 }
 
 impl PopupStory {
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::new)
+    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(window, cx))
     }
 
-    fn new(cx: &mut ViewContext<Self>) -> Self {
-        let form = Form::new(cx);
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let form = Form::new(window, cx);
         Self {
             form,
             focus_handle: cx.focus_handle(),
@@ -120,40 +119,45 @@ impl PopupStory {
         }
     }
 
-    fn on_copy(&mut self, _: &Copy, cx: &mut ViewContext<Self>) {
+    fn on_copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
         self.message = "You have clicked copy".to_string();
         cx.notify()
     }
-    fn on_cut(&mut self, _: &Cut, cx: &mut ViewContext<Self>) {
+    fn on_cut(&mut self, _: &Cut, _: &mut Window, cx: &mut Context<Self>) {
         self.message = "You have clicked cut".to_string();
         cx.notify()
     }
-    fn on_paste(&mut self, _: &Paste, cx: &mut ViewContext<Self>) {
+    fn on_paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
         self.message = "You have clicked paste".to_string();
         cx.notify()
     }
-    fn on_search_all(&mut self, _: &SearchAll, cx: &mut ViewContext<Self>) {
+    fn on_search_all(&mut self, _: &SearchAll, _: &mut Window, cx: &mut Context<Self>) {
         self.message = "You have clicked search all".to_string();
         cx.notify()
     }
-    fn on_toggle_window_mode(&mut self, _: &ToggleWindowMode, cx: &mut ViewContext<Self>) {
+    fn on_toggle_window_mode(
+        &mut self,
+        _: &ToggleWindowMode,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.window_mode = !self.window_mode;
         cx.notify()
     }
-    fn on_action_info(&mut self, info: &Info, cx: &mut ViewContext<Self>) {
+    fn on_action_info(&mut self, info: &Info, _: &mut Window, cx: &mut Context<Self>) {
         self.message = format!("You have clicked info: {}", info.0);
         cx.notify()
     }
 }
 
-impl FocusableView for PopupStory {
-    fn focus_handle(&self, _cx: &AppContext) -> FocusHandle {
+impl Focusable for PopupStory {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl Render for PopupStory {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let form = self.form.clone();
         let window_mode = self.window_mode;
 
@@ -170,14 +174,14 @@ impl Render for PopupStory {
             .size_full()
             .min_h(px(400.))
             .context_menu({
-                move |this, cx| {
+                move |this, window, cx| {
                     this.separator()
                         .menu("Cut", Box::new(Cut))
                         .menu("Copy", Box::new(Copy))
                         .menu("Paste", Box::new(Paste))
                         .separator()
                         .separator()
-                        .submenu("Settings", cx, move |menu, _| {
+                        .submenu("Settings", window, cx, move |menu, _, _| {
                             menu.menu_with_check(
                                 "Toggle Window Mode",
                                 window_mode,
@@ -198,7 +202,7 @@ impl Render for PopupStory {
                 Switch::new("switch-window-mode")
                     .checked(window_mode)
                     .label("Use Window Popover")
-                    .on_click(cx.listener(|this, checked, _| {
+                    .on_click(cx.listener(|this, checked, _, _| {
                         this.window_mode = *checked;
                     })),
             )
@@ -210,9 +214,9 @@ impl Render for PopupStory {
                         v_flex().gap_4().child(
                             Popover::new("info-top-left")
                                 .trigger(Button::new("info-top-left").label("Top Left"))
-                                .content(|cx| {
-                                    cx.new_view(|cx| {
-                                        PopoverContent::new(cx, |_| {
+                                .content(|window, cx| {
+                                    cx.new(|cx| {
+                                        PopoverContent::new(window, cx, |_, _| {
                                             v_flex()
                                                 .gap_4()
                                                 .child("Hello, this is a Popover.")
@@ -235,9 +239,9 @@ impl Render for PopupStory {
                         Popover::new("info-top-right")
                             .anchor(Corner::TopRight)
                             .trigger(Button::new("info-top-right").label("Top Right"))
-                            .content(|cx| {
-                                cx.new_view(|cx| {
-                                    PopoverContent::new(cx, |_| {
+                            .content(|window, cx| {
+                                cx.new(|cx| {
+                                    PopoverContent::new(window, cx, |_, _| {
                                         v_flex()
                                             .gap_4()
                                             .w_96()
@@ -261,7 +265,7 @@ impl Render for PopupStory {
                     .child(
                         Button::new("popup-menu-1")
                             .icon(IconName::Ellipsis)
-                            .popup_menu(move |this, cx| {
+                            .popup_menu(move |this, window, cx| {
                                 this.menu("Copy", Box::new(Copy))
                                     .menu("Cut", Box::new(Cut))
                                     .menu("Paste", Box::new(Paste))
@@ -275,7 +279,7 @@ impl Render for PopupStory {
                                     )
                                     .separator()
                                     .menu_with_element(
-                                        |cx| {
+                                        |_, cx| {
                                             v_flex().gap_1().child("Custom Element").child(
                                                 div()
                                                     .text_sm()
@@ -286,7 +290,7 @@ impl Render for PopupStory {
                                         Box::new(Info(0)),
                                     )
                                     .separator()
-                                    .submenu("Links", cx, |menu, _| {
+                                    .submenu("Links", window, cx, |menu, _, _| {
                                         menu.link_with_icon(
                                             "GitHub Repository",
                                             IconName::GitHub,
@@ -301,7 +305,7 @@ impl Render for PopupStory {
                     .child(
                         Button::new("popup-menu-11112")
                             .label("Scrollable Menu")
-                            .popup_menu_with_anchor(Corner::TopRight, move |this, _| {
+                            .popup_menu_with_anchor(Corner::TopRight, move |this, _, _| {
                                 let mut this = this.scrollable().max_h(px(300.));
                                 for i in 0..100 {
                                     this = this.menu(
@@ -324,16 +328,16 @@ impl Render for PopupStory {
                             Popover::new("info-bottom-left")
                                 .anchor(Corner::BottomLeft)
                                 .trigger(Button::new("pop").label("Popup with Form").w(px(300.)))
-                                .content(move |_| form.clone()),
+                                .content(move |_, _| form.clone()),
                         )
                         .child(
                             Popover::new("info-bottom-right")
                                 .anchor(Corner::BottomRight)
                                 .mouse_button(MouseButton::Right)
                                 .trigger(Button::new("pop").label("Mouse Right Click").w(px(300.)))
-                                .content(|cx| {
-                                    cx.new_view(|cx| {
-                                        PopoverContent::new(cx, |cx| {
+                                .content(|window, cx| {
+                                    cx.new(|cx| {
+                                        PopoverContent::new(window, cx, |_, cx| {
                                             v_flex()
                                                 .gap_2()
                                                 .child(
@@ -349,9 +353,10 @@ impl Render for PopupStory {
                                                                 .w(px(80.))
                                                                 .small()
                                                                 .on_click(cx.listener(
-                                                                    |_, _, cx| {
-                                                                        cx.push_notification(
+                                                                    |_, _, window, cx| {
+                                                                        window.push_notification(
                                                                             "You have clicked Ok.",
+                                                                            cx,
                                                                         );
                                                                         cx.emit(DismissEvent);
                                                                     },
@@ -362,7 +367,7 @@ impl Render for PopupStory {
                                                                 .label("Cancel")
                                                                 .small()
                                                                 .on_click(cx.listener(
-                                                                    |_, _, cx| {
+                                                                    |_, _, _, cx| {
                                                                         cx.emit(DismissEvent);
                                                                     },
                                                                 )),

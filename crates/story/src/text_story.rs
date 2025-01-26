@@ -1,6 +1,6 @@
 use gpui::{
-    div, px, rems, IntoElement, ParentElement, Render, SharedString, Styled, View, ViewContext,
-    VisualContext as _, WindowContext,
+    div, px, rems, App, AppContext, Context, Entity, Focusable, IntoElement, ParentElement, Render,
+    SharedString, Styled, Window,
 };
 
 use ui::{
@@ -29,35 +29,35 @@ impl super::Story for TextStory {
         "The text render testing and examples"
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
-        Self::view(cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
+        Self::view(window, cx)
     }
 }
 
 impl TextStory {
-    pub(crate) fn new(cx: &mut WindowContext) -> Self {
+    pub(crate) fn new(_: &mut Window, cx: &mut App) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
             masked: false,
         }
     }
 
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(|cx| Self::new(cx))
+    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(window, cx))
     }
 
     #[allow(unused)]
-    fn on_click(checked: &bool, cx: &mut WindowContext) {
+    fn on_click(checked: &bool, window: &mut Window, cx: &mut App) {
         println!("Check value changed: {}", checked);
     }
 }
-impl gpui::FocusableView for TextStory {
-    fn focus_handle(&self, _: &gpui::AppContext) -> gpui::FocusHandle {
+impl Focusable for TextStory {
+    fn focus_handle(&self, _: &gpui::App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 impl Render for TextStory {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .gap_6()
             .child(
@@ -72,11 +72,19 @@ impl Render for TextStory {
                             .child(Label::new("Text align right").text_right()),
                     )
                     .child(Label::new("Color Label").text_color(ui::red_500()))
-                    .child(Label::new("Font Size Label").text_size(px(20.)).font_semibold().line_height(rems(1.8)))
+                    .child(
+                        Label::new("Font Size Label")
+                            .text_size(px(20.))
+                            .font_semibold()
+                            .line_height(rems(1.8)),
+                    )
                     .child(
                         div().w(px(200.)).child(
-                            Label::new("Label should support text wrap in default, if the text is too long, it should wrap to the next line.")
-                                .line_height(rems(1.8)),
+                            Label::new(
+                                "Label should support text wrap in default, \
+                                if the text is too long, it should wrap to the next line.",
+                            )
+                            .line_height(rems(1.8)),
                         ),
                     ),
             )
@@ -88,7 +96,11 @@ impl Render for TextStory {
                             h_flex()
                                 .items_start()
                                 .gap_3()
-                                .child(Link::new("link1").href("https://github.com").child("GitHub"))
+                                .child(
+                                    Link::new("link1")
+                                        .href("https://github.com")
+                                        .child("GitHub"),
+                                )
                                 .child(
                                     Link::new("link2")
                                         .href("https://github.com")
@@ -98,8 +110,15 @@ impl Render for TextStory {
                                 )
                                 .child(
                                     Link::new("link3")
-                                        .child(h_flex().gap_1().child(IconName::GitHub).child("GitHub"))
-                                        .on_click(cx.listener(|_, _, cx| cx.open_url("https://google.com"))),
+                                        .child(
+                                            h_flex()
+                                                .gap_1()
+                                                .child(IconName::GitHub)
+                                                .child("GitHub"),
+                                        )
+                                        .on_click(cx.listener(|_, _, _, cx| {
+                                            cx.open_url("https://google.com")
+                                        })),
                                 )
                                 .child(
                                     div().w(px(250.)).child(
@@ -117,18 +136,31 @@ impl Render for TextStory {
                                 .gap_4()
                                 .child(
                                     Clipboard::new("clipboard1")
-                                        .content(|_| Label::new("Click icon to copy"))
+                                        .content(|_, _| Label::new("Click icon to copy"))
                                         .value_fn({
-                                            let view = cx.view().clone();
-                                            move |cx| SharedString::from(format!("masked :{}", view.read(cx).masked))
+                                            let view = cx.model().clone();
+                                            move |_, cx| {
+                                                SharedString::from(format!(
+                                                    "masked :{}",
+                                                    view.read(cx).masked
+                                                ))
+                                            }
                                         })
-                                        .on_copied(|value, _| println!("Copied value: {}", value)),
+                                        .on_copied(|value, _, _| {
+                                            println!("Copied value: {}", value)
+                                        }),
                                 )
                                 .child(
                                     Clipboard::new("clipboard2")
-                                        .content(|_| Link::new("link1").href("https://github.com").child("GitHub"))
+                                        .content(|_, _| {
+                                            Link::new("link1")
+                                                .href("https://github.com")
+                                                .child("GitHub")
+                                        })
                                         .value("https://github.com")
-                                        .on_copied(|value, _| println!("Copied value: {}", value)),
+                                        .on_copied(|value, _, _| {
+                                            println!("Copied value: {}", value)
+                                        }),
                                 ),
                         ),
                     ),
@@ -139,14 +171,20 @@ impl Render for TextStory {
                         .w_full()
                         .gap_4()
                         .child(
-                            h_flex().child(Label::new("9,182,1 USD").text_2xl().masked(self.masked)).child(
-                                Button::new("btn-mask")
-                                    .with_variant(ButtonVariant::Ghost)
-                                    .icon(if self.masked { IconName::EyeOff } else { IconName::Eye })
-                                    .on_click(cx.listener(|this, _, _| {
-                                        this.masked = !this.masked;
-                                    })),
-                            ),
+                            h_flex()
+                                .child(Label::new("9,182,1 USD").text_2xl().masked(self.masked))
+                                .child(
+                                    Button::new("btn-mask")
+                                        .with_variant(ButtonVariant::Ghost)
+                                        .icon(if self.masked {
+                                            IconName::EyeOff
+                                        } else {
+                                            IconName::Eye
+                                        })
+                                        .on_click(cx.listener(|this, _, _, _| {
+                                            this.masked = !this.masked;
+                                        })),
+                                ),
                         )
                         .child(Label::new("500 USD").text_xl().masked(self.masked)),
                 ),
@@ -160,7 +198,11 @@ impl Render for TextStory {
                             .child(Tag::secondary().small().child("Secondary"))
                             .child(Tag::outline().small().child("Outline"))
                             .child(Tag::danger().small().child("danger"))
-                            .child(Tag::custom(ui::yellow_500(), ui::yellow_800(), ui::yellow_500()).small().child("Custom")),
+                            .child(
+                                Tag::custom(ui::yellow_500(), ui::yellow_800(), ui::yellow_500())
+                                    .small()
+                                    .child("Custom"),
+                            ),
                     )
                     .child(
                         h_flex()
@@ -169,7 +211,10 @@ impl Render for TextStory {
                             .child(Tag::secondary().child("Secondary"))
                             .child(Tag::outline().child("Outline"))
                             .child(Tag::danger().child("danger"))
-                            .child(Tag::custom(ui::yellow_500(), ui::yellow_800(), ui::yellow_500()).child("Custom")),
+                            .child(
+                                Tag::custom(ui::yellow_500(), ui::yellow_800(), ui::yellow_500())
+                                    .child("Custom"),
+                            ),
                     ),
             )
     }

@@ -1,8 +1,8 @@
 use crate::{h_flex, ActiveTheme, Disableable, Side, Sizable, Size};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, Animation, AnimationExt as _, AnyElement, Element,
+    div, prelude::FluentBuilder as _, px, Animation, AnimationExt as _, AnyElement, App, Element,
     ElementId, GlobalElementId, InteractiveElement, IntoElement, LayoutId, ParentElement as _,
-    SharedString, Styled as _, WindowContext,
+    SharedString, Styled as _, Window,
 };
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
@@ -12,7 +12,7 @@ pub struct Switch {
     disabled: bool,
     label: Option<SharedString>,
     label_side: Side,
-    on_click: Option<Rc<dyn Fn(&bool, &mut WindowContext)>>,
+    on_click: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>,
     size: Size,
 }
 
@@ -42,7 +42,7 @@ impl Switch {
 
     pub fn on_click<F>(mut self, handler: F) -> Self
     where
-        F: Fn(&bool, &mut WindowContext) + 'static,
+        F: Fn(&bool, &mut Window, &mut App) + 'static,
     {
         self.on_click = Some(Rc::new(handler));
         self
@@ -93,9 +93,10 @@ impl Element for Switch {
     fn request_layout(
         &mut self,
         global_id: Option<&GlobalElementId>,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        cx.with_element_state::<SwitchState, _>(global_id.unwrap(), move |state, cx| {
+        window.with_element_state::<SwitchState, _>(global_id.unwrap(), move |state, window| {
             let state = state.unwrap_or_default();
 
             let theme = cx.theme();
@@ -200,17 +201,17 @@ impl Element for Switch {
                                 .filter(|_| !self.disabled),
                             |this, on_click| {
                                 let prev_checked = state.prev_checked.clone();
-                                this.on_mouse_down(gpui::MouseButton::Left, move |_, cx| {
+                                this.on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
                                     cx.stop_propagation();
                                     *prev_checked.borrow_mut() = Some(checked);
-                                    on_click(&!checked, cx);
+                                    on_click(&!checked, window, cx);
                                 })
                             },
                         ),
                 )
                 .into_any_element();
 
-            ((element.request_layout(cx), element), state)
+            ((element.request_layout(window, cx), element), state)
         })
     }
 
@@ -219,9 +220,10 @@ impl Element for Switch {
         _: Option<&gpui::GlobalElementId>,
         _: gpui::Bounds<gpui::Pixels>,
         element: &mut Self::RequestLayoutState,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) {
-        element.prepaint(cx);
+        element.prepaint(window, cx);
     }
 
     fn paint(
@@ -230,8 +232,9 @@ impl Element for Switch {
         _: gpui::Bounds<gpui::Pixels>,
         element: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) {
-        element.paint(cx)
+        element.paint(window, cx)
     }
 }

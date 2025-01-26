@@ -1,6 +1,6 @@
 use gpui::{
-    div, px, AnyElement, IntoElement, ParentElement as _, Render, SharedString, Styled, View,
-    ViewContext, VisualContext, WindowContext,
+    div, px, AnyElement, App, AppContext, Context, Entity, Focusable, IntoElement,
+    ParentElement as _, Render, SharedString, Styled, Window,
 };
 use ui::ActiveTheme;
 use ui::{
@@ -10,8 +10,8 @@ use ui::{
 
 pub struct ResizableStory {
     focus_handle: gpui::FocusHandle,
-    group1: View<ResizablePanelGroup>,
-    group2: View<ResizablePanelGroup>,
+    group1: Entity<ResizablePanelGroup>,
+    group2: Entity<ResizablePanelGroup>,
 }
 
 impl super::Story for ResizableStory {
@@ -23,24 +23,24 @@ impl super::Story for ResizableStory {
         "The resizable panels."
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl gpui::FocusableView> {
-        Self::view(cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
+        Self::view(window, cx)
     }
 }
 
-impl gpui::FocusableView for ResizableStory {
-    fn focus_handle(&self, _: &gpui::AppContext) -> gpui::FocusHandle {
+impl Focusable for ResizableStory {
+    fn focus_handle(&self, _: &gpui::App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl ResizableStory {
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(|cx| Self::new(cx))
+    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(window, cx))
     }
 
-    fn new(cx: &mut WindowContext) -> Self {
-        fn panel_box(content: impl Into<SharedString>, cx: &WindowContext) -> AnyElement {
+    fn new(_: &mut Window, cx: &mut App) -> Self {
+        fn panel_box(content: impl Into<SharedString>, cx: &App) -> AnyElement {
             div()
                 .p_4()
                 .border_1()
@@ -50,27 +50,27 @@ impl ResizableStory {
                 .into_any_element()
         }
 
-        let group1 = cx.new_view(|cx| {
-            v_resizable(cx)
+        let group1 = cx.new(|cx| {
+            v_resizable()
                 .group(
-                    h_resizable(cx)
+                    h_resizable()
                         .size(px(150.))
                         .child(
                             resizable_panel()
                                 .size(px(300.))
-                                .content(|cx| panel_box("Left 1 (Min 120px)", cx)),
+                                .content(|_, cx| panel_box("Left 1 (Min 120px)", cx)),
                             cx,
                         )
                         .child(
                             resizable_panel()
                                 .size(px(400.))
-                                .content(|cx| panel_box("Center 1", cx)),
+                                .content(|_, cx| panel_box("Center 1", cx)),
                             cx,
                         )
                         .child(
                             resizable_panel()
                                 .size(px(300.))
-                                .content(|cx| panel_box("Right (Grow)", cx)),
+                                .content(|_, cx| panel_box("Right (Grow)", cx)),
                             cx,
                         ),
                     cx,
@@ -78,29 +78,29 @@ impl ResizableStory {
                 .child(
                     resizable_panel()
                         .size(px(150.))
-                        .content(|cx| panel_box("Center (Grow)", cx)),
+                        .content(|_, cx| panel_box("Center (Grow)", cx)),
                     cx,
                 )
                 .child(
                     resizable_panel()
                         .size(px(210.))
-                        .content(|cx| panel_box("Bottom", cx)),
+                        .content(|_, cx| panel_box("Bottom", cx)),
                     cx,
                 )
         });
 
-        let group2 = cx.new_view(|cx| {
-            h_resizable(cx)
+        let group2 = cx.new(|cx| {
+            h_resizable()
                 .child(
                     resizable_panel()
                         .size(px(300.))
-                        .content(|cx| panel_box("Left 2", cx)),
+                        .content(|_, cx| panel_box("Left 2", cx)),
                     cx,
                 )
                 .child(
                     resizable_panel()
                         .size(px(400.))
-                        .content(|cx| panel_box("Right (Grow)", cx)),
+                        .content(|_, cx| panel_box("Right (Grow)", cx)),
                     cx,
                 )
         });
@@ -113,7 +113,7 @@ impl ResizableStory {
 }
 
 impl Render for ResizableStory {
-    fn render(&mut self, _: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .gap_6()
             .child(self.group1.clone())

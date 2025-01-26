@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, AnyElement, ClickEvent, Corner, FocusHandle, Hsla, InteractiveElement as _, IntoElement,
-    MouseButton, ParentElement as _, Render, SharedString, Styled as _, View, ViewContext,
-    VisualContext as _, WindowContext,
+    div, AnyElement, App, AppContext, ClickEvent, Context, Corner, Entity, FocusHandle, Hsla,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString,
+    Styled as _, Window,
 };
 use ui::{
     badge::Badge,
@@ -20,30 +20,35 @@ use crate::{SelectFont, SelectLocale, SelectScrollbarShow};
 pub struct AppTitleBar {
     title: SharedString,
     theme_color: Option<Hsla>,
-    locale_selector: View<LocaleSelector>,
-    font_size_selector: View<FontSizeSelector>,
-    theme_color_picker: View<ColorPicker>,
-    child: Rc<dyn Fn(&mut WindowContext) -> AnyElement>,
+    locale_selector: Entity<LocaleSelector>,
+    font_size_selector: Entity<FontSizeSelector>,
+    theme_color_picker: Entity<ColorPicker>,
+    child: Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>,
 }
 
 impl AppTitleBar {
-    pub fn new(title: impl Into<SharedString>, cx: &mut ViewContext<Self>) -> Self {
-        let locale_selector = cx.new_view(LocaleSelector::new);
-        let font_size_selector = cx.new_view(FontSizeSelector::new);
+    pub fn new(
+        title: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let locale_selector = cx.new(|cx| LocaleSelector::new(window, cx));
+        let font_size_selector = cx.new(|cx| FontSizeSelector::new(window, cx));
 
-        let theme_color_picker = cx.new_view(|cx| {
-            let mut picker = ColorPicker::new("theme-color-picker", cx)
+        let theme_color_picker = cx.new(|cx| {
+            let mut picker = ColorPicker::new("theme-color-picker", window, cx)
                 .xsmall()
                 .anchor(Corner::TopRight)
                 .label("Theme Color");
-            picker.set_value(cx.theme().primary, cx);
+            picker.set_value(cx.theme().primary, window, cx);
             picker
         });
-        cx.subscribe(
+        cx.subscribe_in(
             &theme_color_picker,
-            |this, _, ev: &ColorPickerEvent, cx| match ev {
+            window,
+            |this, _, ev: &ColorPickerEvent, window, cx| match ev {
                 ColorPickerEvent::Change(color) => {
-                    this.set_theme_color(*color, cx);
+                    this.set_theme_color(*color, window, cx);
                 }
             },
         )
@@ -55,42 +60,47 @@ impl AppTitleBar {
             locale_selector,
             font_size_selector,
             theme_color_picker,
-            child: Rc::new(|_| div().into_any_element()),
+            child: Rc::new(|_, _| div().into_any_element()),
         }
     }
 
     pub fn child<F, E>(mut self, f: F) -> Self
     where
         E: IntoElement,
-        F: Fn(&mut WindowContext) -> E + 'static,
+        F: Fn(&mut Window, &mut App) -> E + 'static,
     {
-        self.child = Rc::new(move |cx| f(cx).into_any_element());
+        self.child = Rc::new(move |window, cx| f(window, cx).into_any_element());
         self
     }
 
-    fn set_theme_color(&mut self, color: Option<Hsla>, cx: &mut ViewContext<Self>) {
+    fn set_theme_color(
+        &mut self,
+        color: Option<Hsla>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.theme_color = color;
         if let Some(color) = self.theme_color {
             let theme = cx.global_mut::<Theme>();
             theme.apply_color(color);
-            cx.refresh();
+            window.refresh();
         }
     }
 
-    fn change_color_mode(&mut self, _: &ClickEvent, cx: &mut ViewContext<Self>) {
+    fn change_color_mode(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         let mode = match cx.theme().mode.is_dark() {
             true => ui::ThemeMode::Light,
             false => ui::ThemeMode::Dark,
         };
 
-        Theme::change(mode, cx);
-        self.set_theme_color(self.theme_color, cx);
+        Theme::change(mode, None, cx);
+        self.set_theme_color(self.theme_color, window, cx);
     }
 }
 
 impl Render for AppTitleBar {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let notifications_count = cx.notifications().len();
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let notifications_count = window.notifications(cx).len();
 
         TitleBar::new()
             // left side
@@ -102,9 +112,9 @@ impl Render for AppTitleBar {
                     .justify_end()
                     .px_2()
                     .gap_2()
-                    .on_mouse_down(MouseButton::Left, |_, cx| cx.stop_propagation())
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(self.theme_color_picker.clone())
-                    .child((self.child.clone())(cx))
+                    .child((self.child.clone())(window, cx))
                     .child(
                         Button::new("theme-mode")
                             .map(|this| {
@@ -126,7 +136,7 @@ impl Render for AppTitleBar {
                                 .icon(IconName::GitHub)
                                 .small()
                                 .ghost()
-                                .on_click(|_, cx| {
+                                .on_click(|_, _, cx| {
                                     cx.open_url("https://github.com/longbridge/gpui-component")
                                 }),
                         ),
@@ -151,20 +161,25 @@ struct LocaleSelector {
 }
 
 impl LocaleSelector {
-    pub fn new(cx: &mut ViewContext<Self>) -> Self {
+    pub fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
         }
     }
 
-    fn on_select_locale(&mut self, locale: &SelectLocale, cx: &mut ViewContext<Self>) {
+    fn on_select_locale(
+        &mut self,
+        locale: &SelectLocale,
+        window: &mut Window,
+        _: &mut Context<Self>,
+    ) {
         ui::set_locale(&locale.0);
-        cx.refresh();
+        window.refresh();
     }
 }
 
 impl Render for LocaleSelector {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focus_handle = self.focus_handle.clone();
         let locale = ui::locale().to_string();
 
@@ -177,7 +192,7 @@ impl Render for LocaleSelector {
                     .small()
                     .ghost()
                     .icon(IconName::Globe)
-                    .popup_menu(move |this, _| {
+                    .popup_menu(move |this, _, _| {
                         this.menu_with_check(
                             "English",
                             locale == "en",
@@ -199,25 +214,35 @@ struct FontSizeSelector {
 }
 
 impl FontSizeSelector {
-    pub fn new(cx: &mut ViewContext<Self>) -> Self {
+    pub fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
         }
     }
 
-    fn on_select_font(&mut self, font_size: &SelectFont, cx: &mut ViewContext<Self>) {
+    fn on_select_font(
+        &mut self,
+        font_size: &SelectFont,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         Theme::global_mut(cx).font_size = font_size.0 as f32;
-        cx.refresh();
+        window.refresh();
     }
 
-    fn on_select_scrollbar_show(&mut self, show: &SelectScrollbarShow, cx: &mut ViewContext<Self>) {
+    fn on_select_scrollbar_show(
+        &mut self,
+        show: &SelectScrollbarShow,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         Theme::global_mut(cx).scrollbar_show = show.0;
-        cx.refresh();
+        window.refresh();
     }
 }
 
 impl Render for FontSizeSelector {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focus_handle = self.focus_handle.clone();
         let font_size = cx.theme().font_size as i32;
         let scroll_show = cx.theme().scrollbar_show;
@@ -232,7 +257,7 @@ impl Render for FontSizeSelector {
                     .small()
                     .ghost()
                     .icon(IconName::Settings2)
-                    .popup_menu(move |this, _| {
+                    .popup_menu(move |this, _, _| {
                         this.menu_with_check(
                             "Font Large",
                             font_size == 18,

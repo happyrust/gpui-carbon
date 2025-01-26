@@ -1,9 +1,9 @@
 // From:
 // https://github.com/zed-industries/zed/blob/a8afc63a91f6b75528540dcffe73dc8ce0c92ad8/crates/gpui/examples/window_shadow.rs
 use gpui::{
-    canvas, div, point, prelude::FluentBuilder as _, px, AnyElement, Bounds, CursorStyle,
+    canvas, div, point, prelude::FluentBuilder as _, px, AnyElement, App, Bounds, CursorStyle,
     Decorations, Edges, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement,
-    Pixels, Point, RenderOnce, ResizeEdge, Size, Styled as _, WindowContext,
+    Pixels, Point, RenderOnce, ResizeEdge, Size, Styled as _, Window,
 };
 
 use crate::ActiveTheme;
@@ -35,8 +35,8 @@ impl WindowBorder {
 }
 
 /// Get the window paddings.
-pub fn window_paddings(cx: &WindowContext) -> Edges<Pixels> {
-    match cx.window_decorations() {
+pub fn window_paddings(window: &Window) -> Edges<Pixels> {
+    match window.window_decorations() {
         Decorations::Server => Edges::all(px(0.0)),
         Decorations::Client { tiling } => {
             let mut paddings = Edges::all(SHADOW_SIZE);
@@ -64,9 +64,9 @@ impl ParentElement for WindowBorder {
 }
 
 impl RenderOnce for WindowBorder {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
-        let decorations = cx.window_decorations();
-        cx.set_client_inset(SHADOW_SIZE);
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let decorations = window.window_decorations();
+        window.set_client_inset(SHADOW_SIZE);
 
         div()
             .id("window-backdrop")
@@ -77,22 +77,22 @@ impl RenderOnce for WindowBorder {
                     .bg(gpui::transparent_black())
                     .child(
                         canvas(
-                            |_bounds, cx| {
-                                cx.insert_hitbox(
+                            |_bounds, window, _| {
+                                window.insert_hitbox(
                                     Bounds::new(
                                         point(px(0.0), px(0.0)),
-                                        cx.window_bounds().get_bounds().size,
+                                        window.window_bounds().get_bounds().size,
                                     ),
                                     false,
                                 )
                             },
-                            move |_bounds, hitbox, cx| {
-                                let mouse = cx.mouse_position();
-                                let size = cx.window_bounds().get_bounds().size;
+                            move |_bounds, hitbox, window, _| {
+                                let mouse = window.mouse_position();
+                                let size = window.window_bounds().get_bounds().size;
                                 let Some(edge) = resize_edge(mouse, SHADOW_SIZE, size) else {
                                     return;
                                 };
-                                cx.set_cursor_style(
+                                window.set_cursor_style(
                                     match edge {
                                         ResizeEdge::Top | ResizeEdge::Bottom => {
                                             CursorStyle::ResizeUpDown
@@ -124,13 +124,13 @@ impl RenderOnce for WindowBorder {
                     .when(!tiling.bottom, |div| div.pb(SHADOW_SIZE))
                     .when(!tiling.left, |div| div.pl(SHADOW_SIZE))
                     .when(!tiling.right, |div| div.pr(SHADOW_SIZE))
-                    .on_mouse_move(|_e, cx| cx.refresh())
-                    .on_mouse_down(MouseButton::Left, move |_, cx| {
-                        let size = cx.window_bounds().get_bounds().size;
-                        let pos = cx.mouse_position();
+                    .on_mouse_move(|_e, window, _| window.refresh())
+                    .on_mouse_down(MouseButton::Left, move |_, window, _| {
+                        let size = window.window_bounds().get_bounds().size;
+                        let pos = window.mouse_position();
 
                         match resize_edge(pos, SHADOW_SIZE, size) {
-                            Some(edge) => cx.start_window_resize(edge),
+                            Some(edge) => window.start_window_resize(edge),
                             None => {}
                         };
                     }),
@@ -167,7 +167,7 @@ impl RenderOnce for WindowBorder {
                                 }])
                             }),
                     })
-                    .on_mouse_move(|_e, cx| {
+                    .on_mouse_move(|_e, _, cx| {
                         cx.stop_propagation();
                     })
                     .bg(gpui::transparent_black())
