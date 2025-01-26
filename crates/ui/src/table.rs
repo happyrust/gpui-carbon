@@ -753,9 +753,14 @@ where
         }
     }
 
+    #[inline]
     fn render_cell(&self, col_ix: usize, _cx: &mut ViewContext<Self>) -> Div {
-        let col_width = self.col_groups[col_ix].width;
-        let col_padding = self.col_groups[col_ix].padding;
+        let Some(col_group) = self.col_groups.get(col_ix) else {
+            return div();
+        };
+
+        let col_width = col_group.width;
+        let col_padding = col_group.padding;
 
         div()
             .w(col_width)
@@ -1037,17 +1042,27 @@ where
                 // Render left fixed columns
                 this.child(
                     h_flex()
-                        .id("table-head-fixed-left")
+                        .relative()
                         .h_full()
                         .bg(cx.theme().table_head)
-                        .border_r_1()
-                        .border_color(cx.theme().border)
                         .children(
                             self.col_groups
                                 .iter()
                                 .filter(|col| col.fixed == Some(ColFixed::Left))
                                 .enumerate()
                                 .map(|(col_ix, _)| self.render_th(col_ix, cx)),
+                        )
+                        .child(
+                            // Fixed columns border
+                            div()
+                                .absolute()
+                                .top_0()
+                                .right_0()
+                                .bottom_0()
+                                .w_0()
+                                .flex_shrink_0()
+                                .border_r_1()
+                                .border_color(cx.theme().border),
                         )
                         .child(
                             canvas(
@@ -1102,6 +1117,7 @@ where
         row_ix: usize,
         rows_count: usize,
         left_cols_count: usize,
+        col_sizes: Rc<Vec<gpui::Size<Pixels>>>,
         cols_count: usize,
         cx: &mut ViewContext<Self>,
     ) -> impl IntoElement {
@@ -1109,13 +1125,6 @@ where
         let is_stripe_row = self.stripe && row_ix % 2 != 0;
         let is_selected = self.selected_row == Some(row_ix);
         let view = cx.view().clone();
-        let col_sizes: Rc<Vec<gpui::Size<Pixels>>> = Rc::new(
-            self.col_groups
-                .iter()
-                .skip(left_cols_count)
-                .map(|col| col.bounds.size)
-                .collect(),
-        );
 
         if row_ix < rows_count {
             self.delegate
@@ -1135,13 +1144,12 @@ where
                         this.bg(cx.theme().table_hover)
                     }
                 })
-                .children(if left_cols_count > 0 {
+                .when(left_cols_count > 0, |this| {
                     // Left fixed columns
-                    Some(
+                    this.child(
                         h_flex()
+                            .relative()
                             .h_full()
-                            .border_r_1()
-                            .border_color(cx.theme().table_row_border)
                             .children({
                                 let mut items = Vec::with_capacity(left_cols_count);
 
@@ -1155,10 +1163,20 @@ where
                                 });
 
                                 items
-                            }),
+                            })
+                            .child(
+                                // Fixed columns border
+                                div()
+                                    .absolute()
+                                    .top_0()
+                                    .right_0()
+                                    .bottom_0()
+                                    .w_0()
+                                    .flex_shrink_0()
+                                    .border_r_1()
+                                    .border_color(cx.theme().border),
+                            ),
                     )
-                } else {
-                    None
                 })
                 .child(
                     h_flex()
@@ -1265,6 +1283,34 @@ where
         }
     }
 
+    /// Calculate the extra rows needed to fill the table empty space when `stripe` is true.
+    fn calculate_extra_rows_needed(&self, rows_count: usize) -> usize {
+        if !self.stripe {
+            return 0;
+        }
+
+        let mut extra_rows_needed = 0;
+
+        let row_height = self.size.table_row_height();
+        let total_height = self
+            .vertical_scroll_handle
+            .0
+            .borrow()
+            .base_handle
+            .bounds()
+            .size
+            .height;
+
+        let actual_height = row_height * rows_count as f32;
+        let remaining_height = total_height - actual_height;
+
+        if remaining_height > px(0.) {
+            extra_rows_needed = (remaining_height / row_height).ceil() as usize;
+        }
+
+        extra_rows_needed
+    }
+
     #[inline]
     fn measure_render_td(
         &mut self,
@@ -1341,35 +1387,7 @@ where
         let left_cols_count = self.fixed_cols.left;
         let rows_count = self.delegate.rows_count(cx);
         let loading = self.delegate.loading(cx);
-
-        let row_height = self
-            .vertical_scroll_handle
-            .0
-            .borrow()
-            .last_item_size
-            .map(|size| size.item.height);
-        let total_height = self
-            .vertical_scroll_handle
-            .0
-            .borrow()
-            .base_handle
-            .bounds()
-            .size
-            .height;
-
-        // Calculate the extra rows needed to fill the table for stripe style.
-        let mut extra_rows_needed = 0;
-        if self.stripe {
-            if let Some(row_height) = row_height {
-                if row_height > px(0.) {
-                    let actual_height = row_height * rows_count as f32;
-                    let remaining_height = total_height - actual_height;
-                    if remaining_height > px(0.) {
-                        extra_rows_needed = (remaining_height / row_height).ceil() as usize;
-                    }
-                }
-            }
-        }
+        let extra_rows_needed = self.calculate_extra_rows_needed(rows_count);
 
         let inner_table = v_flex()
             .key_context("Table")
@@ -1405,6 +1423,17 @@ where
                                 rows_count + extra_rows_needed,
                                 {
                                     move |table, visible_range, cx| {
+                                        // We must calculate the col sizes here, because the col sizes
+                                        // need render_th first, then that method will set the bounds of each col.
+                                        let col_sizes: Rc<Vec<gpui::Size<Pixels>>> = Rc::new(
+                                            table
+                                                .col_groups
+                                                .iter()
+                                                .skip(left_cols_count)
+                                                .map(|col| col.bounds.size)
+                                                .collect(),
+                                        );
+
                                         table.load_more_if_need(rows_count, visible_range.end, cx);
                                         table.update_visible_range_if_need(
                                             visible_range.clone(),
@@ -1430,6 +1459,7 @@ where
                                                 row_ix,
                                                 rows_count,
                                                 left_cols_count,
+                                                col_sizes.clone(),
                                                 cols_count,
                                                 cx,
                                             ));
