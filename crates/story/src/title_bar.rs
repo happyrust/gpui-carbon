@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, AnyElement, App, AppContext, ClickEvent, Context, Corner, Entity, FocusHandle, Hsla,
+    div, px, AnyElement, App, AppContext, ClickEvent, Context, Corner, Entity, FocusHandle, Hsla,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString,
     Styled as _, Window,
 };
@@ -15,7 +15,7 @@ use ui::{
     ActiveTheme as _, ContextModal as _, IconName, Sizable as _, Theme, TitleBar,
 };
 
-use crate::{SelectFont, SelectLocale, SelectScrollbarShow};
+use crate::{SelectFont, SelectLocale, SelectRadius, SelectScrollbarShow};
 
 pub struct AppTitleBar {
     title: SharedString,
@@ -226,7 +226,17 @@ impl FontSizeSelector {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        Theme::global_mut(cx).font_size = font_size.0 as f32;
+        Theme::global_mut(cx).font_size = px(font_size.0 as f32);
+        window.refresh();
+    }
+
+    fn on_select_radius(
+        &mut self,
+        radius: &SelectRadius,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        Theme::global_mut(cx).radius = px(radius.0 as f32);
         window.refresh();
     }
 
@@ -244,13 +254,15 @@ impl FontSizeSelector {
 impl Render for FontSizeSelector {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focus_handle = self.focus_handle.clone();
-        let font_size = cx.theme().font_size as i32;
+        let font_size = cx.theme().font_size.0 as i32;
+        let radius = cx.theme().radius.0 as i32;
         let scroll_show = cx.theme().scrollbar_show;
 
         div()
             .id("font-size-selector")
             .track_focus(&focus_handle)
             .on_action(cx.listener(Self::on_select_font))
+            .on_action(cx.listener(Self::on_select_radius))
             .on_action(cx.listener(Self::on_select_scrollbar_show))
             .child(
                 Button::new("btn")
@@ -265,6 +277,14 @@ impl Render for FontSizeSelector {
                         )
                         .menu_with_check("Font Default", font_size == 16, Box::new(SelectFont(16)))
                         .menu_with_check("Font Small", font_size == 14, Box::new(SelectFont(14)))
+                        .separator()
+                        .menu_with_check("Radius 8px", radius == 8, Box::new(SelectRadius(8)))
+                        .menu_with_check(
+                            "Radius 4px (default)",
+                            radius == 4,
+                            Box::new(SelectRadius(4)),
+                        )
+                        .menu_with_check("Radius 0px", radius == 0, Box::new(SelectRadius(0)))
                         .separator()
                         .menu_with_check(
                             "Scrolling to show Scrollbar",

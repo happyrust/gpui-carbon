@@ -74,7 +74,13 @@ pub struct SelectLocale(SharedString);
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct SelectFont(usize);
 
-impl_internal_actions!(story, [SelectLocale, SelectFont, SelectScrollbarShow,]);
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+pub struct SelectRadius(usize);
+
+impl_internal_actions!(
+    story,
+    [SelectLocale, SelectFont, SelectRadius, SelectScrollbarShow,]
+);
 
 actions!(story, [Quit, Open, CloseWindow]);
 
@@ -231,7 +237,7 @@ pub fn section(title: impl IntoElement, cx: &App) -> Div {
         .gap_4()
         .p_4()
         .w_full()
-        .rounded_lg()
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(theme.border)
         .flex_wrap()
