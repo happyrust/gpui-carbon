@@ -19,7 +19,6 @@ use gpui::{
 };
 
 // TODO:
-// - Press Up,Down to move cursor up, down line if multi-line
 // - Move cursor to skip line eof empty chars.
 
 use super::blink_cursor::BlinkCursor;
@@ -1081,94 +1080,6 @@ impl TextInput {
         }
     }
 
-    // Fork of `closest_index_for_x` method from `gpui::text::Layout`
-    // https://github.com/zed-industries/zed/blob/d1be419fff415329b38f26aff90488700702c82a/crates/gpui/src/text_system/line_layout.rs#L74
-    fn closest_index_for_x(&self, line: &WrappedLine, x: Pixels) -> usize {
-        let mut prev_index = 0;
-        let mut prev_x = px(0.);
-
-        for run in line.unwrapped_layout.runs.iter() {
-            for glyph in run.glyphs.iter() {
-                if glyph.position.x >= x {
-                    if glyph.position.x - x < x - prev_x {
-                        return glyph.index;
-                    } else {
-                        return prev_index;
-                    }
-                }
-                prev_index = glyph.index;
-                prev_x = glyph.position.x;
-            }
-        }
-
-        // HOTFIX:
-        //
-        // Wait https://github.com/zed-industries/zed/pull/23603
-        if line.unwrapped_layout.len == 1 {
-            if x > line.width() / 2.0 {
-                return 1;
-            }
-            return 0;
-        }
-
-        line.unwrapped_layout.len
-    }
-
-    /// Get the closest index for position
-    ///
-    /// Fork:
-    /// https://github.com/zed-industries/zed/blob/1c322c0f2daa50f46644832a6a1cdf15bcf921ea/crates/gpui/src/text_system/line_layout.rs#L272
-    ///
-    /// Wait PR https://github.com/zed-industries/zed/pull/23668
-    pub fn closest_index_for_position(
-        &self,
-        line: &WrappedLine,
-        position: Point<Pixels>,
-        line_height: Pixels,
-    ) -> Result<usize, usize> {
-        let wrapped_line_ix = (position.y / line_height) as usize;
-
-        let wrapped_line_start_index;
-        let wrapped_line_start_x;
-        if wrapped_line_ix > 0 {
-            let Some(line_start_boundary) = line.wrap_boundaries.get(wrapped_line_ix - 1) else {
-                return Err(0);
-            };
-            let run = &line.unwrapped_layout.runs[line_start_boundary.run_ix];
-            let glyph = &run.glyphs[line_start_boundary.glyph_ix];
-            wrapped_line_start_index = glyph.index;
-            wrapped_line_start_x = glyph.position.x;
-        } else {
-            wrapped_line_start_index = 0;
-            wrapped_line_start_x = Pixels::ZERO;
-        };
-
-        let wrapped_line_end_index;
-        let wrapped_line_end_x;
-        if wrapped_line_ix < line.wrap_boundaries.len() {
-            let next_wrap_boundary_ix = wrapped_line_ix;
-            let next_wrap_boundary = line.wrap_boundaries[next_wrap_boundary_ix];
-            let run = &line.unwrapped_layout.runs[next_wrap_boundary.run_ix];
-            let glyph = &run.glyphs[next_wrap_boundary.glyph_ix];
-            wrapped_line_end_index = glyph.index;
-            wrapped_line_end_x = glyph.position.x;
-        } else {
-            wrapped_line_end_index = line.unwrapped_layout.len;
-            wrapped_line_end_x = line.unwrapped_layout.width;
-        };
-
-        let mut position_in_unwrapped_line = position;
-        position_in_unwrapped_line.x += wrapped_line_start_x;
-        if position_in_unwrapped_line.x < wrapped_line_start_x {
-            Err(wrapped_line_start_index)
-        } else if position_in_unwrapped_line.x >= wrapped_line_end_x {
-            Err(wrapped_line_end_index)
-        } else {
-            // HOTFIX
-            Ok(self.closest_index_for_x(&line, position_in_unwrapped_line.x))
-        }
-    }
-
     fn index_for_mouse_position(
         &self,
         position: Point<Pixels>,
@@ -1205,14 +1116,14 @@ impl TextInput {
         for line in lines.iter() {
             let line_origin = self.line_origin_with_y_offset(&mut y_offset, &line, line_height);
             let pos = inner_position - line_origin;
-            let closest_index = self.closest_index_for_x(line, pos.x);
+            let closest_index = line.unwrapped_layout.closest_index_for_x(pos.x);
 
             // Return offset by use closest_index_for_x if is single line mode.
             if self.is_single_line() {
                 return closest_index;
             }
 
-            let index_result = self.closest_index_for_position(line, pos, line_height);
+            let index_result = line.closest_index_for_position(pos, line_height);
             if let Ok(v) = index_result {
                 index += v;
                 break;
