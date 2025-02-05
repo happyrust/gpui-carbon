@@ -33,8 +33,8 @@ impl_internal_actions!(table_story, [ChangeSize, OpenDetail]);
 #[derive(Clone, Debug, Default)]
 struct Stock {
     id: usize,
-    symbol: String,
-    name: String,
+    symbol: SharedString,
+    name: SharedString,
     price: f64,
     change: f64,
     change_percent: f64,
@@ -103,8 +103,8 @@ fn random_stocks(size: usize) -> Vec<Stock> {
     (0..size)
         .map(|id| Stock {
             id,
-            symbol: Faker.fake::<String>(),
-            name: Faker.fake::<String>(),
+            symbol: Faker.fake::<String>().into(),
+            name: Faker.fake::<String>().into(),
             change: (-100.0..100.0).fake(),
             change_percent: (-1.0..1.0).fake(),
             volume: (0.0..1000.0).fake(),
