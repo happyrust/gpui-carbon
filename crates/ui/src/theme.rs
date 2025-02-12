@@ -7,7 +7,8 @@ use gpui::{
 use crate::{scroll::ScrollbarShow, Colorize as _};
 
 pub fn init(cx: &mut App) {
-    Theme::sync_system_appearance(None, cx)
+    Theme::sync_system_appearance(None, cx);
+    Theme::sync_scrollbar_appearance(cx);
 }
 
 pub trait ActiveTheme {
@@ -244,7 +245,7 @@ impl ThemeColor {
             primary_hover: hsl(223.0, 5.9, 15.0),
             progress_bar: hsl(223.0, 5.9, 10.0),
             ring: hsl(240.0, 5.9, 65.0),
-            scrollbar: hsl(0., 0., 97.).opacity(0.75),
+            scrollbar: hsl(0., 0., 92.).opacity(0.75),
             scrollbar_thumb: hsl(0., 0., 69.).opacity(0.9),
             scrollbar_thumb_hover: hsl(0., 0., 59.),
             secondary: hsl(240.0, 5.9, 96.9),
@@ -487,16 +488,31 @@ impl Theme {
         }
     }
 
+    /// Sync the Scrollbar showing behavior with the system
+    pub fn sync_scrollbar_appearance(cx: &mut App) {
+        if cx.should_auto_hide_scrollbars() {
+            cx.global_mut::<Theme>().scrollbar_show = ScrollbarShow::Scrolling;
+        } else {
+            cx.global_mut::<Theme>().scrollbar_show = ScrollbarShow::Always;
+        }
+    }
+
     pub fn change(mode: ThemeMode, window: Option<&mut Window>, cx: &mut App) {
         let colors = match mode {
             ThemeMode::Light => ThemeColor::light(),
             ThemeMode::Dark => ThemeColor::dark(),
         };
 
-        let mut theme = Theme::from(colors);
-        theme.mode = mode;
+        if !cx.has_global::<Theme>() {
+            let theme = Theme::from(colors);
+            cx.set_global(theme);
+        }
 
-        cx.set_global(theme);
+        let theme = cx.global_mut::<Theme>();
+
+        theme.mode = mode;
+        theme.colors = colors;
+
         if let Some(window) = window {
             window.refresh();
         }
