@@ -233,11 +233,12 @@ impl Tiles {
         let mut new_origin = self.dragging_initial_bounds.origin + delta;
 
         // Avoid out of bounds
-        if new_origin.x < px(0.) {
-            new_origin.x = px(0.);
-        }
         if new_origin.y < px(0.) {
             new_origin.y = px(0.);
+        }
+        let min_left = -self.dragging_initial_bounds.size.width + px(64.);
+        if new_origin.x < min_left {
+            new_origin.x = min_left;
         }
 
         let final_origin = round_point_to_nearest_ten(new_origin, cx);
@@ -754,8 +755,9 @@ impl Tiles {
             .border_1()
             .border_color(cx.theme().border)
             .absolute()
-            .left(item.bounds.origin.x - px(1.))
-            .top(item.bounds.origin.y - px(1.))
+            .left(item.bounds.origin.x)
+            .top(item.bounds.origin.y)
+            // More 1px to account for the border width when 2 panels are too close
             .w(item.bounds.size.width + px(1.))
             .h(item.bounds.size.height + px(1.))
             .overflow_hidden()
@@ -875,6 +877,7 @@ impl Render for Tiles {
                     .id("tiles")
                     .track_scroll(&self.scroll_handle)
                     .size_full()
+                    .top(-px(1.))
                     .overflow_scroll()
                     .children(
                         panels
