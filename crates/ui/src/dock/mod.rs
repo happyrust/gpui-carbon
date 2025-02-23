@@ -343,11 +343,19 @@ impl DockItem {
                     stack_panel.add_panel(new_item.view(), None, dock_area.clone(), window, cx);
                 });
             }
-            Self::Tiles { view, .. } => {
+            Self::Tiles { view, items } => {
+                let tile_item = TileItem::new(
+                    Arc::new(cx.new(|cx| {
+                        let mut tab_panel = TabPanel::new(None, dock_area.clone(), window, cx);
+                        tab_panel.add_panel(panel.clone(), window, cx);
+                        tab_panel
+                    })),
+                    bounds.unwrap_or_else(|| TileMeta::default().bounds),
+                );
+
+                items.push(tile_item.clone());
                 view.update(cx, |tiles, cx| {
-                    let bounds = bounds.unwrap_or_else(|| TileMeta::default().bounds);
-                    tiles.add_item(TileItem::new(panel.clone(), bounds), dock_area, window, cx);
-                    cx.notify();
+                    tiles.add_item(tile_item, dock_area, window, cx);
                 });
             }
             Self::Panel { .. } => {}
