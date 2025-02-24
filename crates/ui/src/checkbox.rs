@@ -1,13 +1,14 @@
 use crate::{h_flex, text::Text, v_flex, ActiveTheme, Disableable, IconName, Selectable};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, relative, svg, App, ElementId, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled as _, Window,
+    div, prelude::FluentBuilder as _, px, relative, svg, App, Div, ElementId, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 
 /// A Checkbox element.
 #[derive(IntoElement)]
 pub struct Checkbox {
     id: ElementId,
+    base: Div,
     label: Option<Text>,
     checked: bool,
     disabled: bool,
@@ -18,6 +19,7 @@ impl Checkbox {
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
+            base: div(),
             label: None,
             checked: false,
             disabled: false,
@@ -38,6 +40,12 @@ impl Checkbox {
     pub fn on_click(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
         self
+    }
+}
+
+impl Styled for Checkbox {
+    fn style(&mut self) -> &mut gpui::StyleRefinement {
+        self.base.style()
     }
 }
 
@@ -70,21 +78,21 @@ impl RenderOnce for Checkbox {
         };
         let radius = (cx.theme().radius / 2.).min(px(6.));
 
-        // wrap a flex to patch for let Checkbox display inline
-        div().flex().child(
+        self.base.child(
             h_flex()
                 .id(self.id)
                 .gap_2()
-                .items_center()
+                .items_start()
                 .line_height(relative(1.))
+                .text_color(cx.theme().foreground)
                 .child(
                     v_flex()
                         .relative()
+                        .size_4()
+                        .flex_shrink_0()
                         .border_1()
                         .border_color(color)
                         .rounded(radius)
-                        .size_4()
-                        .flex_shrink_0()
                         .map(|this| match self.checked {
                             false => this.bg(cx.theme().transparent),
                             _ => this.bg(color),
@@ -104,14 +112,7 @@ impl RenderOnce for Checkbox {
                 )
                 .map(|this| {
                     if let Some(label) = self.label {
-                        this.text_color(cx.theme().foreground).child(
-                            div()
-                                .w_full()
-                                .overflow_x_hidden()
-                                .text_ellipsis()
-                                .line_height(relative(1.))
-                                .child(label),
-                        )
+                        this.child(div().size_full().line_height(relative(1.)).child(label))
                     } else {
                         this
                     }
