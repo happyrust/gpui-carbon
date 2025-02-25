@@ -357,11 +357,10 @@ impl RenderOnce for Modal {
             .snap_to_window()
             .child(
                 div()
-                    .occlude()
                     .w(view_size.width)
                     .h(view_size.height)
                     .when(self.overlay_visible, |this| {
-                        this.bg(overlay_color(self.overlay, window, cx))
+                        this.occlude().bg(overlay_color(self.overlay, window, cx))
                     })
                     .when(self.overlay_closable, |this| {
                         this.on_mouse_down(MouseButton::Left, {
