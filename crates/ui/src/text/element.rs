@@ -229,20 +229,25 @@ pub enum Node {
         lang: Option<SharedString>,
     },
     Table(Table),
-    // <br>
-    Break,
+    Break {
+        html: bool,
+    },
     Divider,
     Ignore,
     Unknown,
 }
 
 impl Node {
-    fn is_ignore(&self) -> bool {
+    pub(super) fn is_ignore(&self) -> bool {
         matches!(self, Self::Ignore)
     }
 
-    fn is_list_item(&self) -> bool {
+    pub(super) fn is_list_item(&self) -> bool {
         matches!(self, Self::ListItem { .. })
+    }
+
+    pub(super) fn is_break(&self) -> bool {
+        matches!(self, Self::Break { .. })
     }
 
     /// Combine all children, omitting the empt parent nodes.
@@ -276,7 +281,14 @@ impl RenderOnce for Paragraph {
 
                 for text_node in children.into_iter() {
                     let text_len = text_node.text.len();
-                    text.push_str(&text_node.text);
+                    let part = if text.len() == 0 {
+                        // trim start for first text
+                        text_node.text.trim_start()
+                    } else {
+                        text_node.text.as_str()
+                    };
+
+                    text.push_str(part);
 
                     let mut node_highlights = vec![];
                     for (range, style) in text_node.marks {
@@ -581,7 +593,6 @@ impl Node {
                 .border_l_3()
                 .border_color(cx.theme().secondary_active)
                 .px_4()
-                .py_1()
                 .child(children)
                 .into_any_element(),
             Node::List { children, ordered } => v_flex()
@@ -628,7 +639,7 @@ impl Node {
                 .h(px(2.))
                 .mb(mb)
                 .into_any_element(),
-            Node::Break => div().into_any_element(),
+            Node::Break { .. } => div().into_any_element(),
             Node::Ignore => div().into_any_element(),
             _ => {
                 if cfg!(debug_assertions) {
@@ -638,5 +649,167 @@ impl Node {
                 div().into_any_element()
             }
         }
+    }
+}
+
+impl Paragraph {
+    fn to_markdown(&self) -> String {
+        let mut text = match self {
+            Paragraph::Texts { children, .. } => children
+                .iter()
+                .map(|text_node| {
+                    let mut text = text_node.text.clone();
+                    for (range, style) in &text_node.marks {
+                        if style.bold {
+                            text = format!("**{}**", &text_node.text[range.clone()]);
+                        }
+                        if style.italic {
+                            text = format!("*{}*", &text_node.text[range.clone()]);
+                        }
+                        if style.strikethrough {
+                            text = format!("~~{}~~", &text_node.text[range.clone()]);
+                        }
+                        if style.code {
+                            text = format!("`{}`", &text_node.text[range.clone()]);
+                        }
+                        if let Some(link) = &style.link {
+                            text = format!("[{}]({})", &text_node.text[range.clone()], link.url);
+                        }
+                    }
+                    text
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+            Paragraph::Image { image, .. } => {
+                let alt = image.alt.clone().unwrap_or_default();
+                let title = image
+                    .title
+                    .clone()
+                    .map_or(String::new(), |t| format!(" \"{}\"", t));
+                format!("![{}]({}{})", alt, image.url, title)
+            }
+        };
+
+        text.push_str("\n\n");
+        text
+    }
+}
+
+impl Node {
+    /// Converts the node to markdown format.
+    ///
+    /// This is used to generate markdown for test.
+    #[allow(dead_code)]
+    pub(crate) fn to_markdown(&self) -> String {
+        match self {
+            Node::Root { children } => children
+                .iter()
+                .map(|child| child.to_markdown())
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+            Node::Paragraph(paragraph) => paragraph.to_markdown(),
+            Node::Heading { level, children } => {
+                let hashes = "#".repeat(*level as usize);
+                format!("{} {}", hashes, children.to_markdown())
+            }
+            Node::Blockquote(paragraph) => {
+                let content = paragraph.to_markdown();
+                content
+                    .lines()
+                    .map(|line| format!("> {}", line))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+            Node::List { children, ordered } => children
+                .iter()
+                .enumerate()
+                .map(|(i, child)| {
+                    let prefix = if *ordered {
+                        format!("{}. ", i + 1)
+                    } else {
+                        "- ".to_string()
+                    };
+                    format!("{}{}", prefix, child.to_markdown())
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Node::ListItem {
+                children, checked, ..
+            } => {
+                let checkbox = if let Some(checked) = checked {
+                    if *checked {
+                        "[x] "
+                    } else {
+                        "[ ] "
+                    }
+                } else {
+                    ""
+                };
+                format!(
+                    "{}{}",
+                    checkbox,
+                    children
+                        .iter()
+                        .map(|child| child.to_markdown())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            }
+            Node::CodeBlock { code, lang } => {
+                format!("```{}\n{}\n```", lang.clone().unwrap_or_default(), code)
+            }
+            Node::Table(table) => {
+                let header = table
+                    .children
+                    .first()
+                    .map(|row| {
+                        row.children
+                            .iter()
+                            .map(|cell| cell.children.to_markdown())
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    })
+                    .unwrap_or_default();
+                let alignments = table
+                    .column_aligns
+                    .iter()
+                    .map(|align| {
+                        match align {
+                            TableColumnAlign::Left => ":--",
+                            TableColumnAlign::Center => ":-:",
+                            TableColumnAlign::Right => "--:",
+                        }
+                        .to_string()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                let rows = table
+                    .children
+                    .iter()
+                    .skip(1)
+                    .map(|row| {
+                        row.children
+                            .iter()
+                            .map(|cell| cell.children.to_markdown())
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format!("{}\n{}\n{}", header, alignments, rows)
+            }
+            Node::Break { html } => {
+                if *html {
+                    "<br>".to_string()
+                } else {
+                    "\n".to_string()
+                }
+            }
+            Node::Divider => "---".to_string(),
+            Node::Ignore => "".to_string(),
+            Node::Unknown => "".to_string(),
+        }
+        .trim()
+        .to_string()
     }
 }
