@@ -8,6 +8,7 @@ resolver = "2"
 gpui-component = { path = "crates/ui" }
 story = { path = "crates/story" }
 gpui = { git = "https://github.com/huacnlee/zed.git", branch = "webview" }
+calamine = "0.23.1"
 
 anyhow = "1"
 log = "0.4"
@@ -46,3 +47,6 @@ resvg = { opt-level = 3 }
 rustybuzz = { opt-level = 3 }
 taffy = { opt-level = 3 }
 ttf-parser = { opt-level = 3 }
+
+[patch.crates-io]
+pathfinder_simd = { git = "https://github.com/theoparis/pathfinder.git" }

@@ -47,6 +47,7 @@ markup5ever_rcdom = "0.3.0"
 minify-html = "0.15.0"
 # Calendar
 chrono = "0.4.38"
+calamine = "0.26"
 
 [dev-dependencies]
 indoc = "2"
