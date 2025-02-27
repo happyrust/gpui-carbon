@@ -1,8 +1,6 @@
 use calamine::{open_workbook, Reader, Xlsx};
 use gpui::{
-    div, hsla, impl_actions, px, App, AppContext, Application, Context, Edges, Entity,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels,
-    Render, SharedString, Size, Styled, Subscription, Window,
+    div, hsla, impl_actions, px, App, AppContext, Application, BorrowAppContext, Context, Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels, Render, SharedString, Size, Styled, Subscription, Window
 };
 use gpui_component::{
     button::Button,
@@ -218,7 +216,6 @@ impl TableDelegate for ExcelTableDelegate {
 pub struct ExcelStory {
     dock_area: Entity<DockArea>,
     table: Entity<Table<ExcelTableDelegate>>,
-    file_path_input: Entity<TextInput>,
     current_sheet: Option<String>,
     required_columns: Vec<String>,
     focus_handle: FocusHandle,
@@ -261,12 +258,6 @@ impl ExcelStory {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
 
-        let file_path_input = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx);
-            input.set_text("assets/excel/指标汇总.xlsx", window, cx);
-            input
-        });
-
         let current_sheet = None;
 
         let required_columns = vec![
@@ -297,10 +288,10 @@ impl ExcelStory {
 
         let weak_dock_area = dock_area.downgrade();
         // Configure dock area layout
-       dock_area.update(cx, |dock_area, cx| {
+        dock_area.update(cx, |dock_area, cx| {
             // Left panel (Form panel)
             let left_panel = DockItem::tab(
-                FormPanel::view(story_entity.clone(), window, cx),
+                ParamFormPanel::view(story_entity.clone(), window, cx),
                 &weak_dock_area,
                 window,
                 cx,
@@ -308,7 +299,7 @@ impl ExcelStory {
 
             // Center panel (Result panel)
             let center_panel = DockItem::tab(
-                ResultPanel::view(story_entity.clone(), window, cx),
+                CarbonResultPanel::view(story_entity.clone(), window, cx),
                 &weak_dock_area,
                 window,
                 cx,
@@ -316,7 +307,7 @@ impl ExcelStory {
 
             // Right panel (Table panel)
             let right_panel = DockItem::tab(
-                TablePanel::view(story_entity.clone(), window, cx),
+                InputeTablePanel::view(story_entity.clone(), window, cx),
                 &weak_dock_area,
                 window,
                 cx,
@@ -331,7 +322,6 @@ impl ExcelStory {
         let excel_story = Self {
             dock_area,
             table,
-            file_path_input,
             current_sheet,
             required_columns,
             focus_handle,
@@ -482,9 +472,8 @@ impl ExcelStory {
         Ok((self.required_columns.clone(), data))
     }
 
-    fn load_excel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let file_path = self.file_path_input.read(cx).text();
-        let path = PathBuf::from(file_path.as_ref());
+    fn load_excel(&mut self, file_path: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let path = PathBuf::from(file_path);
 
         match open_workbook::<Xlsx<_>, _>(&path) {
             Ok(mut workbook) => {
@@ -772,28 +761,6 @@ impl ExcelStory {
         }
     }
 
-    fn on_set_project_type(
-        &mut self,
-        action: &SetProjectType,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.project_type = action.0.clone();
-        cx.emit(UpdateResultTable);
-        cx.notify();
-    }
-
-    fn on_set_road_type(
-        &mut self,
-        action: &SetRoadType,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.road_type = action.0.clone();
-        cx.emit(UpdateResultTable);
-        cx.notify();
-    }
-
     fn on_change_sheet(
         &mut self,
         action: &ChangeSheet,
@@ -809,26 +776,33 @@ impl Render for ExcelStory {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
-            .on_action(cx.listener(Self::on_set_project_type))
-            .on_action(cx.listener(Self::on_set_road_type))
+            // .on_action(cx.listener(Self::on_set_project_type))
+            // .on_action(cx.listener(Self::on_set_road_type))
             .on_action(cx.listener(Self::on_change_sheet))
             .child(self.dock_area.clone())
     }
 }
 
-struct FormPanel {
+struct ParamFormPanel {
     story: Entity<ExcelStory>,
     focus_handle: FocusHandle,
     project_type_dropdown: Entity<Dropdown<Vec<SharedString>>>,
     road_type_dropdown: Entity<Dropdown<Vec<SharedString>>>,
+    file_path_input: Entity<TextInput>,
 }
 
-impl FormPanel {
+impl ParamFormPanel {
     pub fn view(
         story: Entity<ExcelStory>,
         window: &mut Window,
         cx: &mut Context<DockArea>,
     ) -> Entity<Self> {
+        let file_path_input = cx.new(|cx| {
+            let mut input = TextInput::new(window, cx);
+            input.set_text("assets/excel/指标汇总.xlsx", window, cx);
+            input
+        });
+
         let project_types = vec!["道路工程".into(), "交通工程".into()];
         let project_type_dropdown = cx.new(|cx| {
             Dropdown::new("project-type", project_types, None, window, cx)
@@ -847,12 +821,14 @@ impl FormPanel {
             let story = story.clone();
             let project_type_dropdown = project_type_dropdown.clone();
             let road_type_dropdown = road_type_dropdown.clone();
+            let file_path_input = file_path_input.clone();
 
             let panel = Self {
                 story: story.clone(),
                 focus_handle: cx.focus_handle(),
                 project_type_dropdown: project_type_dropdown.clone(),
                 road_type_dropdown: road_type_dropdown.clone(),
+                file_path_input: file_path_input.clone(),
             };
 
             // Subscribe to dropdown events
@@ -860,8 +836,12 @@ impl FormPanel {
                 let story = story.clone();
                 move |_, _dropdown, event: &DropdownEvent<Vec<SharedString>>, _window, cx| {
                     if let DropdownEvent::Confirm(Some(value)) = event {
-                        story.update(cx, |_story, cx| {
-                            cx.dispatch_action(&SetProjectType(value.to_string()));
+                        story.update(cx, |story, cx| {
+                            story.project_type = value.to_string();
+                            // 只有当两个类型都已选择时才发送更新事件
+                            if !story.project_type.is_empty() && !story.road_type.is_empty() {
+                                cx.emit(UpdateResultTable);
+                            }
                         });
                     }
                 }
@@ -872,8 +852,12 @@ impl FormPanel {
                 let story = story.clone();
                 move |_, _dropdown, event: &DropdownEvent<Vec<SharedString>>, _window, cx| {
                     if let DropdownEvent::Confirm(Some(value)) = event {
-                        story.update(cx, |_story, cx| {
-                            cx.dispatch_action(&SetRoadType(value.to_string()));
+                        story.update(cx, |story, cx| {
+                            story.road_type = value.to_string();
+                            // 只有当两个类型都已选择时才发送更新事件
+                            if !story.project_type.is_empty() && !story.road_type.is_empty() {
+                                cx.emit(UpdateResultTable);
+                            }
                         });
                     }
                 }
@@ -887,9 +871,9 @@ impl FormPanel {
     }
 }
 
-impl EventEmitter<PanelEvent> for FormPanel {}
+impl EventEmitter<PanelEvent> for ParamFormPanel {}
 
-impl Panel for FormPanel {
+impl Panel for ParamFormPanel {
     fn panel_name(&self) -> &'static str {
         "FormPanel"
     }
@@ -899,15 +883,16 @@ impl Panel for FormPanel {
     }
 }
 
-impl Focusable for FormPanel {
+impl Focusable for ParamFormPanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for FormPanel {
+impl Render for ParamFormPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let this = self.story.read(cx);
+        // let this = self.story.read(cx);
+        let file_path_input = self.file_path_input.clone();
         div()
             .flex()
             .flex_col()
@@ -922,25 +907,58 @@ impl Render for FormPanel {
                         v_flex()
                             .gap_2()
                             .child(Label::new("Excel 文件路径"))
-                            .child(div().w_full().child(this.file_path_input.clone()))
+                            .child(div().w_full().child(
+                                h_flex()
+                                    .gap_1()
+                                    .child(div().flex_grow().child(file_path_input.clone()))
+                                    .child(
+                                        Button::new("select-file")
+                                            .label("...")
+                                            .on_click({
+                                                let file_path_input = file_path_input.clone();
+                                                move |_, window, cx| {
+                                                    let file_path_input = file_path_input.clone();
+                                                    window.spawn(cx, |mut awc| async move {
+                                                        if let Some(path) = rfd::AsyncFileDialog::new()
+                                                            .add_filter("Excel files", &["xlsx"])
+                                                            .set_title("选择 Excel 文件")
+                                                            .pick_file()
+                                                            .await
+                                                        {
+                                                            let path_str = path.path().to_string_lossy().to_string();
+                                                            // awc.update_entity(handle, update)
+                                                            awc.update(|win, cx|{
+                                                                file_path_input.update(cx, |input, cx| {
+                                                                    input.set_text(&path_str, win, cx);
+                                                                });
+                                                            });
+                                                        }
+                                                    })
+                                                    .detach();
+                                                }
+                                            })
+                                    ),
+                            ))
                             .child(
                                 h_flex()
-                                    .w_full()
                                     .gap_2()
                                     .child(
                                         Button::new("load")
-                                            .label("加载 Excel")
+                                            .label("导入Excel")
                                             .on_click({
                                                 let story = self.story.clone();
+                                                let file_path_input = self.file_path_input.clone();
                                                 move |_, window, cx| {
+                                                    let file_path = file_path_input.read(cx).text();
                                                     story.update(cx, |this, cx| {
-                                                        this.load_excel(window, cx);
+                                                        this.load_excel(&file_path, window, cx);
                                                     });
                                                 }
                                             })
                                             .flex_grow(),
                                     )
                                     .child({
+                                        let this = self.story.read(cx);
                                         let current_sheet_label = this
                                             .current_sheet
                                             .as_deref()
@@ -992,12 +1010,12 @@ impl Render for FormPanel {
     }
 }
 
-struct TablePanel {
+struct InputeTablePanel {
     story: Entity<ExcelStory>,
     focus_handle: FocusHandle,
 }
 
-impl TablePanel {
+impl InputeTablePanel {
     pub fn view(
         story: Entity<ExcelStory>,
         _window: &mut Window,
@@ -1011,9 +1029,9 @@ impl TablePanel {
     }
 }
 
-impl EventEmitter<PanelEvent> for TablePanel {}
+impl EventEmitter<PanelEvent> for InputeTablePanel {}
 
-impl Panel for TablePanel {
+impl Panel for InputeTablePanel {
     fn panel_name(&self) -> &'static str {
         "TablePanel"
     }
@@ -1023,13 +1041,13 @@ impl Panel for TablePanel {
     }
 }
 
-impl Focusable for TablePanel {
+impl Focusable for InputeTablePanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for TablePanel {
+impl Render for InputeTablePanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let this = self.story.read(cx);
         div().size_full().child(this.table.clone())
@@ -1206,14 +1224,14 @@ impl TableDelegate for ResultTableDelegate {
     }
 }
 
-struct ResultPanel {
+struct CarbonResultPanel {
     table: Entity<Table<ResultTableDelegate>>,
     focus_handle: FocusHandle,
     story: Entity<ExcelStory>,
     _subscriptions: Vec<Subscription>,
 }
 
-impl ResultPanel {
+impl CarbonResultPanel {
     pub fn view(
         story: Entity<ExcelStory>,
         window: &mut Window,
@@ -1231,6 +1249,7 @@ impl ResultPanel {
                     let story_data = story.read(cx);
                     let project_type = story_data.project_type.clone();
                     let road_type = story_data.road_type.clone();
+                    dbg!(&project_type, &road_type);
                     let db_path = story_data.db_path.clone();
                     drop(story_data);
 
@@ -1267,9 +1286,9 @@ impl ResultPanel {
     }
 }
 
-impl EventEmitter<PanelEvent> for ResultPanel {}
+impl EventEmitter<PanelEvent> for CarbonResultPanel {}
 
-impl Panel for ResultPanel {
+impl Panel for CarbonResultPanel {
     fn panel_name(&self) -> &'static str {
         "ResultPanel"
     }
@@ -1279,13 +1298,13 @@ impl Panel for ResultPanel {
     }
 }
 
-impl Focusable for ResultPanel {
+impl Focusable for CarbonResultPanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for ResultPanel {
+impl Render for CarbonResultPanel {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div().size_full().child(self.table.clone())
     }
@@ -1297,7 +1316,7 @@ fn main() {
     app.run(move |cx| {
         story::init(cx);
         cx.activate(true);
-
         story::create_new_window("碳排放计算程序", ExcelStory::new_view, cx);
     });
 }
+
