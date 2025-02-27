@@ -1,25 +1,30 @@
-use gpui::*;
-use story::{Assets, Story};
-use calamine::{Reader, open_workbook, Xlsx};
-use std::collections::HashMap;
-use std::ops::Range;
+use calamine::{open_workbook, Reader, Xlsx};
+use gpui::{
+    div, hsla, impl_actions, px, App, AppContext, Application, Context, Edges, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels,
+    Render, SharedString, Size, Styled, Subscription, Window,
+};
 use gpui_component::{
-    button::Button, dock::{DockArea, DockPlacement, Panel, PanelView, TabPanel}, h_flex, input::TextInput, label::Label, notification::{Notification, NotificationType}, popup_menu::PopupMenuExt, table::{self, Table, TableDelegate}, v_flex, ContextModal,
+    button::Button,
+    dock::{DockArea, DockPlacement, Panel, PanelEvent, PanelView},
+    dropdown::{Dropdown, DropdownEvent},
+    h_flex,
+    input::TextInput,
+    label::Label,
+    notification::{Notification, NotificationType},
+    popup_menu::PopupMenuExt,
+    table::{self, Table, TableDelegate},
+    v_flex, ContextModal, Sizable,
 };
-use std::path::PathBuf;
-use gpui::{
-    App, Application, Context, Entity, Focusable, FocusHandle,
-    IntoElement, Render, Window, SharedString, div, px, Edges,
-    impl_actions,
-};
-use serde::{Serialize, Deserialize};
+use rusqlite::{params, Connection, Result as SqliteResult};
 use schemars::JsonSchema;
-use std::sync::Arc;
-use gpui::{
-    Action,
-};
-use rusqlite::{Connection, Result as SqliteResult, params};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
+use std::ops::Range;
+use std::path::PathBuf;
+use std::sync::Arc;
+use story::{Assets, Story};
 
 #[derive(Clone, Debug)]
 struct ExcelRow {
@@ -41,7 +46,10 @@ pub struct ChangeSheet {
 #[derive(Clone, Debug, PartialEq, Deserialize, JsonSchema, Serialize)]
 pub struct UpdateResultTable;
 
-impl_actions!(excel_table, [SetProjectType, SetRoadType, ChangeSheet, UpdateResultTable]);
+impl_actions!(
+    excel_table,
+    [SetProjectType, SetRoadType, ChangeSheet, UpdateResultTable]
+);
 
 struct ExcelTableDelegate {
     rows: Vec<ExcelRow>,
@@ -82,7 +90,11 @@ impl ExcelTableDelegate {
 
     fn set_data(&mut self, columns: Vec<String>, data: Vec<HashMap<String, String>>) {
         self.columns = columns;
-        self.rows = data.into_iter().enumerate().map(|(id, data)| ExcelRow { id, data }).collect();
+        self.rows = data
+            .into_iter()
+            .enumerate()
+            .map(|(id, data)| ExcelRow { id, data })
+            .collect();
         self.eof = true;
         self.loading = false;
         self.full_loading = false;
@@ -152,7 +164,7 @@ impl TableDelegate for ExcelTableDelegate {
     ) -> impl IntoElement {
         let row = &self.rows[row_ix];
         let col_name = &self.columns[col_ix];
-        
+
         div().child(row.data.get(col_name).cloned().unwrap_or_default())
     }
 
@@ -228,8 +240,8 @@ impl Story for ExcelStory {
         "ExcelStory"
     }
 
-    fn new_view(window: &mut Window, cx: &mut App) -> Entity<impl Render + Focusable> {
-        Self::view(window, cx)
+    fn new_view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(window, cx))
     }
 }
 
@@ -242,13 +254,13 @@ impl Focusable for ExcelStory {
 impl EventEmitter<UpdateResultTable> for ExcelStory {}
 
 impl ExcelStory {
-    pub fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn view(window: &mut Window, cx: &mut Context<Self>) -> Entity<Self> {
         cx.new(|cx| Self::new(window, cx))
     }
 
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
-        
+
         let file_path_input = cx.new(|cx| {
             let mut input = TextInput::new(window, cx);
             input.set_text("assets/excel/指标汇总.xlsx", window, cx);
@@ -271,9 +283,7 @@ impl ExcelStory {
         let table = cx.new(|cx| Table::new(delegate, window, cx));
 
         // Initialize dock area with just one panel
-        let dock_area = cx.new(|cx| {
-            DockArea::new("excel-table", Some(1), window, cx)
-        });
+        let dock_area = cx.new(|cx| DockArea::new("excel-table", Some(1), window, cx));
 
         // Create data directory if it doesn't exist
         let data_dir = "data";
@@ -283,15 +293,15 @@ impl ExcelStory {
         // Initialize database
         Self::init_database(&db_path).expect("Failed to initialize database");
 
-        let mut excel_story = Self {
+        let excel_story = Self {
             dock_area,
             table,
             file_path_input,
             current_sheet,
             required_columns,
             focus_handle,
-            project_type: "道路工程".to_string(),
-            road_type: "主干路 62 m2".to_string(),
+            project_type: String::new(),
+            road_type: String::new(),
             db_path,
         };
 
@@ -301,6 +311,12 @@ impl ExcelStory {
             // Add form panel to the left
             let form_panel = FormPanel::view(story_entity.clone(), window, cx);
             dock_area.add_panel(form_panel, DockPlacement::Left, None, window, cx);
+            // 设置左侧面板宽度为 300px
+            if let Some(left_dock) = dock_area.left_dock().as_ref() {
+                left_dock.update(cx, |dock, cx| {
+                    dock.set_size(px(300.), window, cx);
+                });
+            }
 
             // Add result panel to the center
             let result_panel = ResultPanel::view(story_entity.clone(), window, cx);
@@ -319,7 +335,7 @@ impl ExcelStory {
 
     fn init_database(db_path: &str) -> SqliteResult<()> {
         let conn = Connection::open(db_path)?;
-        
+
         // Create sheets table
         conn.execute(
             "CREATE TABLE IF NOT EXISTS sheets (
@@ -393,29 +409,34 @@ impl ExcelStory {
                 });
 
                 window.push_notification(
-                    Notification::new(format!("已切换到工作表 '{}', 共 {} 行数据", sheet_name, data_len))
-                        .with_type(NotificationType::Success),
-                    cx
+                    Notification::new(format!(
+                        "已切换到工作表 '{}', 共 {} 行数据",
+                        sheet_name, data_len
+                    ))
+                    .with_type(NotificationType::Success),
+                    cx,
                 );
             }
             Err(e) => {
                 window.push_notification(
                     Notification::new(format!("加载工作表数据失败: {}", e))
                         .with_type(NotificationType::Error),
-                    cx
+                    cx,
                 );
             }
         }
     }
 
-    
     /// 加载指定工作表的数据
     /// 参数:
     ///   - sheet_name: 工作表名称
     /// 返回:
     ///   - Ok((headers, data)): headers为表头列名, data为表格数据
     ///   - Err: 数据库操作错误
-    fn load_sheet_data(&self, sheet_name: &str) -> SqliteResult<(Vec<String>, Vec<HashMap<String, String>>)> {
+    fn load_sheet_data(
+        &self,
+        sheet_name: &str,
+    ) -> SqliteResult<(Vec<String>, Vec<HashMap<String, String>>)> {
         let conn = Connection::open(&self.db_path)?;
 
         // Get sheet_id
@@ -430,7 +451,7 @@ impl ExcelStory {
             "SELECT 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计 
              FROM excel_data 
              WHERE sheet_id = ?
-             ORDER BY id"
+             ORDER BY id",
         )?;
 
         let mut data = Vec::new();
@@ -455,24 +476,24 @@ impl ExcelStory {
         match open_workbook::<Xlsx<_>, _>(&path) {
             Ok(mut workbook) => {
                 let sheet_names = workbook.sheet_names().to_vec();
-                
+
                 // Open database connection
                 match Connection::open(&self.db_path) {
                     Ok(mut conn) => {
                         // Start transaction
                         let tx = conn.transaction().unwrap();
-                        
+
                         // Clear existing data
                         tx.execute("DELETE FROM excel_data", []).unwrap();
                         tx.execute("DELETE FROM sheets", []).unwrap();
-                        
+
                         let mut success = false;
-                        
+
                         for sheet_name in &sheet_names {
                             if let Ok(range) = workbook.worksheet_range(sheet_name) {
                                 if !range.is_empty() {
                                     let rows: Vec<_> = range.rows().collect();
-                                    
+
                                     // Find header row
                                     let mut header_columns = HashMap::new();
                                     if let Some(header_idx) = rows.iter().position(|row| {
@@ -483,7 +504,7 @@ impl ExcelStory {
                                                 header_columns.insert(col_idx, cell_value);
                                             }
                                         }
-                                        
+
                                         self.required_columns.iter().all(|required_col| {
                                             header_columns.values().any(|col| col == required_col)
                                         })
@@ -492,9 +513,10 @@ impl ExcelStory {
                                         tx.execute(
                                             "INSERT INTO sheets (name) VALUES (?)",
                                             params![sheet_name],
-                                        ).unwrap();
+                                        )
+                                        .unwrap();
                                         let sheet_id = tx.last_insert_rowid();
-                                        
+
                                         // Create column mapping
                                         let mut column_mapping = HashMap::new();
                                         for (col_idx, header) in header_columns.iter() {
@@ -502,26 +524,32 @@ impl ExcelStory {
                                                 column_mapping.insert(*col_idx, header.clone());
                                             }
                                         }
-                                        
+
                                         // Insert data
                                         for row in rows.iter().skip(header_idx + 1) {
                                             let mut row_data = HashMap::new();
                                             let mut valid_columns = 0;
-                                            
+
                                             for required_col in &self.required_columns {
-                                                if let Some(col_idx) = column_mapping.iter()
+                                                if let Some(col_idx) = column_mapping
+                                                    .iter()
                                                     .find(|(_, header)| *header == required_col)
-                                                    .map(|(&idx, _)| idx) {
+                                                    .map(|(&idx, _)| idx)
+                                                {
                                                     if let Some(cell) = row.get(col_idx) {
-                                                        let cell_value = cell.to_string().trim().to_string();
+                                                        let cell_value =
+                                                            cell.to_string().trim().to_string();
                                                         if !cell_value.is_empty() {
-                                                            row_data.insert(required_col.clone(), cell_value);
+                                                            row_data.insert(
+                                                                required_col.clone(),
+                                                                cell_value,
+                                                            );
                                                             valid_columns += 1;
                                                         }
                                                     }
                                                 }
                                             }
-                                            
+
                                             if valid_columns > 0 {
                                                 tx.execute(
                                                     "INSERT INTO excel_data (
@@ -545,35 +573,36 @@ impl ExcelStory {
                                 }
                             }
                         }
-                        
+
                         if success {
                             // Commit transaction
                             tx.commit().unwrap();
-                            
+
                             // Get available sheets
-                            let mut stmt = conn.prepare("SELECT name FROM sheets ORDER BY id").unwrap();
+                            let mut stmt =
+                                conn.prepare("SELECT name FROM sheets ORDER BY id").unwrap();
                             let sheet_names: Vec<String> = stmt
                                 .query_map([], |row| row.get(0))
                                 .unwrap()
                                 .map(|r| r.unwrap())
                                 .collect();
-                            
+
                             // Load first sheet
                             if let Some(first_sheet) = sheet_names.first() {
                                 self.current_sheet = Some(first_sheet.clone());
                                 self.change_sheet(first_sheet.clone(), window, cx);
                             }
-                            
+
                             window.push_notification(
                                 Notification::new("Excel 数据已成功导入到数据库")
                                     .with_type(NotificationType::Success),
-                                cx
+                                cx,
                             );
                         } else {
                             window.push_notification(
                                 Notification::new("未找到任何有效的工作表数据")
                                     .with_type(NotificationType::Error),
-                                cx
+                                cx,
                             );
                         }
                     }
@@ -581,7 +610,7 @@ impl ExcelStory {
                         window.push_notification(
                             Notification::new(format!("数据库连接失败: {}", e))
                                 .with_type(NotificationType::Error),
-                            cx
+                            cx,
                         );
                     }
                 }
@@ -590,7 +619,7 @@ impl ExcelStory {
                 window.push_notification(
                     Notification::new(format!("打开 Excel 文件失败: {}", e))
                         .with_type(NotificationType::Error),
-                    cx
+                    cx,
                 );
             }
         }
@@ -598,7 +627,7 @@ impl ExcelStory {
 
     fn load_resource_data(&self, window: &mut Window, cx: &mut Context<Self>) {
         let file_path = PathBuf::from("assets/excel/人材机数据库.xlsx");
-        
+
         match open_workbook::<Xlsx<_>, _>(&file_path) {
             Ok(mut workbook) => {
                 // Open database connection
@@ -606,34 +635,29 @@ impl ExcelStory {
                     Ok(mut conn) => {
                         // Start transaction
                         let tx = conn.transaction().unwrap();
-                        
+
                         // Clear existing data
                         tx.execute("DELETE FROM labor", []).unwrap();
                         tx.execute("DELETE FROM material", []).unwrap();
                         tx.execute("DELETE FROM machine", []).unwrap();
-                        
-                        let required_columns = vec![
-                            "编码",
-                            "名称",
-                            "规格型号",
-                            "单位",
-                            "单位碳排放因子",
-                        ];
-                        
+
+                        let required_columns =
+                            vec!["编码", "名称", "规格型号", "单位", "单位碳排放因子"];
+
                         let sheet_table_mapping = vec![
                             ("人工数据", "labor"),
                             ("材料数据", "material"),
                             ("机械数据", "machine"),
                         ];
-                        
+
                         let mut success = false;
-                        
+
                         for (sheet_name, table_name) in sheet_table_mapping {
                             // dbg!(sheet_name, table_name);
                             if let Ok(range) = workbook.worksheet_range(sheet_name) {
                                 if !range.is_empty() {
                                     let rows: Vec<_> = range.rows().collect();
-                                    
+
                                     // Find header row and column indices
                                     let mut column_indices = HashMap::new();
                                     if let Some(header_idx) = rows.iter().position(|row| {
@@ -644,7 +668,9 @@ impl ExcelStory {
                                                 column_indices.insert(cell_value, col_idx);
                                             }
                                         }
-                                        required_columns.iter().all(|col| column_indices.contains_key(*col))
+                                        required_columns
+                                            .iter()
+                                            .all(|col| column_indices.contains_key(*col))
                                     }) {
                                         // dbg!(&column_indices);
                                         // Insert data
@@ -653,38 +679,44 @@ impl ExcelStory {
                                              VALUES (?, ?, ?, ?, ?)",
                                             table_name
                                         );
-                                        
+
                                         let mut stmt = tx.prepare(&insert_sql).unwrap();
-                                        
+
                                         for row in rows.iter().skip(header_idx + 1) {
-                                            let code = row.get(column_indices["编码"])
+                                            let code = row
+                                                .get(column_indices["编码"])
                                                 .map(|c| c.to_string())
                                                 .unwrap_or_default();
-                                                
+
                                             if !code.is_empty() {
-                                                let name = row.get(column_indices["名称"])
+                                                let name = row
+                                                    .get(column_indices["名称"])
                                                     .map(|c| c.to_string())
                                                     .unwrap_or_default();
-                                                    
-                                                let specification = row.get(column_indices["规格型号"])
+
+                                                let specification = row
+                                                    .get(column_indices["规格型号"])
                                                     .map(|c| c.to_string())
                                                     .unwrap_or_default();
-                                                    
-                                                let unit = row.get(column_indices["单位"])
+
+                                                let unit = row
+                                                    .get(column_indices["单位"])
                                                     .map(|c| c.to_string())
                                                     .unwrap_or_default();
-                                                    
-                                                let carbon_factor = row.get(column_indices["单位碳排放因子"])
+
+                                                let carbon_factor = row
+                                                    .get(column_indices["单位碳排放因子"])
                                                     .and_then(|c| c.to_string().parse::<f64>().ok())
                                                     .unwrap_or_default();
-                                                
+
                                                 stmt.execute(params![
                                                     code,
                                                     name,
                                                     specification,
                                                     unit,
                                                     carbon_factor,
-                                                ]).unwrap();
+                                                ])
+                                                .unwrap();
                                             }
                                         }
                                         success = true;
@@ -692,19 +724,19 @@ impl ExcelStory {
                                 }
                             }
                         }
-                        
+
                         if success {
                             tx.commit().unwrap();
                             window.push_notification(
                                 Notification::new("人材机数据库已成功导入")
                                     .with_type(NotificationType::Success),
-                                cx
+                                cx,
                             );
                         } else {
                             window.push_notification(
                                 Notification::new("未找到有效的人材机数据")
                                     .with_type(NotificationType::Error),
-                                cx
+                                cx,
                             );
                         }
                     }
@@ -712,7 +744,7 @@ impl ExcelStory {
                         window.push_notification(
                             Notification::new(format!("数据库连接失败: {}", e))
                                 .with_type(NotificationType::Error),
-                            cx
+                            cx,
                         );
                     }
                 }
@@ -721,60 +753,40 @@ impl ExcelStory {
                 window.push_notification(
                     Notification::new(format!("打开人材机数据库文件失败: {}", e))
                         .with_type(NotificationType::Error),
-                    cx
+                    cx,
                 );
             }
         }
     }
 
-    fn render_form(&self, _cx: &mut Context<Self>) -> impl IntoElement {
-        let this = self.clone();
-        v_flex()
-            .gap_4()
-            .p_4()
-            .min_w(px(350.))
-            .bg(hsla(0.0, 0.0, 0.96, 1.0))
-            .child(
-                v_flex()
-                    .gap_2()
-                    .child(Label::new("工程类型"))
-                    .child(
-                        Button::new("project_type")
-                            .label(&this.project_type)
-                            .popup_menu(move |menu, _, _| {
-                                menu.menu("道路工程", Box::new(SetProjectType("道路工程".to_string())))
-                                   .menu("交通工程", Box::new(SetProjectType("交通工程".to_string())))
-                            }),
-                    ),
-            )
-            .child(
-                v_flex()
-                    .gap_2()
-                    .child(Label::new("道路类型"))
-                    .child(
-                        Button::new("road_type")
-                            .label(&this.road_type)
-                            .popup_menu(move |menu, _, _| {
-                                menu.menu("主干路 62 m2", Box::new(SetRoadType("主干路 62 m2".to_string())))
-                                   .menu("次干路59cm m2", Box::new(SetRoadType("次干路59cm m2".to_string())))
-                            }),
-                    ),
-            )
-    }
-
-    fn on_set_project_type(&mut self, action: &SetProjectType, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_set_project_type(
+        &mut self,
+        action: &SetProjectType,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.project_type = action.0.clone();
         cx.emit(UpdateResultTable);
         cx.notify();
     }
 
-    fn on_set_road_type(&mut self, action: &SetRoadType, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_set_road_type(
+        &mut self,
+        action: &SetRoadType,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.road_type = action.0.clone();
         cx.emit(UpdateResultTable);
         cx.notify();
     }
 
-    fn on_change_sheet(&mut self, action: &ChangeSheet, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_change_sheet(
+        &mut self,
+        action: &ChangeSheet,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.change_sheet(action.sheet_name.clone(), window, cx);
         cx.emit(UpdateResultTable);
     }
@@ -794,21 +806,75 @@ impl Render for ExcelStory {
 struct FormPanel {
     story: Entity<ExcelStory>,
     focus_handle: FocusHandle,
+    project_type_dropdown: Entity<Dropdown<Vec<SharedString>>>,
+    road_type_dropdown: Entity<Dropdown<Vec<SharedString>>>,
 }
 
 impl FormPanel {
-    pub fn view(story: Entity<ExcelStory>, _window: &mut Window, cx: &mut Context<DockArea>) -> Arc<dyn PanelView> {
-        let form_panel = cx.new(|cx| Self {
-            story,
-            focus_handle: cx.focus_handle(),
+    pub fn view(
+        story: Entity<ExcelStory>,
+        window: &mut Window,
+        cx: &mut Context<DockArea>,
+    ) -> Arc<dyn PanelView> {
+        let project_types = vec!["道路工程".into(), "交通工程".into()];
+        let project_type_dropdown = cx.new(|cx| {
+            Dropdown::new("project-type", project_types, None, window, cx)
+                .small()
+                .placeholder("请选择工程类型")
         });
+
+        let road_types = vec!["主干路 62 m2".into(), "次干路59cm m2".into()];
+        let road_type_dropdown = cx.new(|cx| {
+            Dropdown::new("road-type", road_types, None, window, cx)
+                .small()
+                .placeholder("请选择道路类型")
+        });
+
+        let form_panel = cx.new(|cx| {
+            let story = story.clone();
+            let project_type_dropdown = project_type_dropdown.clone();
+            let road_type_dropdown = road_type_dropdown.clone();
+
+            let panel = Self {
+                story: story.clone(),
+                focus_handle: cx.focus_handle(),
+                project_type_dropdown: project_type_dropdown.clone(),
+                road_type_dropdown: road_type_dropdown.clone(),
+            };
+
+            // Subscribe to dropdown events
+            cx.subscribe_in(&project_type_dropdown, window, {
+                let story = story.clone();
+                move |_, _dropdown, event: &DropdownEvent<Vec<SharedString>>, _window, cx| {
+                    if let DropdownEvent::Confirm(Some(value)) = event {
+                        story.update(cx, |_story, cx| {
+                            cx.dispatch_action(&SetProjectType(value.to_string()));
+                        });
+                    }
+                }
+            })
+            .detach();
+
+            cx.subscribe_in(&road_type_dropdown, window, {
+                let story = story.clone();
+                move |_, _dropdown, event: &DropdownEvent<Vec<SharedString>>, _window, cx| {
+                    if let DropdownEvent::Confirm(Some(value)) = event {
+                        story.update(cx, |_story, cx| {
+                            cx.dispatch_action(&SetRoadType(value.to_string()));
+                        });
+                    }
+                }
+            })
+            .detach();
+
+            panel
+        });
+
         Arc::new(form_panel)
     }
-
-    fn min_width(&self) -> f32 {
-        350.0
-    }
 }
+
+impl EventEmitter<PanelEvent> for FormPanel {}
 
 impl Panel for FormPanel {
     fn panel_name(&self) -> &'static str {
@@ -820,8 +886,6 @@ impl Panel for FormPanel {
     }
 }
 
-impl EventEmitter<gpui_component::dock::PanelEvent> for FormPanel {}
-
 impl Focusable for FormPanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -832,24 +896,20 @@ impl Render for FormPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let this = self.story.read(cx);
         div()
-            .size_full()
-            .min_w(px(200.))
+            .flex()
+            .flex_col()
+            // .min_w(px(100.))
+            .w_auto()
+            .p_4()
+            .bg(hsla(0.0, 0.0, 0.96, 1.0))
             .child(
                 v_flex()
-                    .size_full()
                     .gap_4()
-                    .p_4()
-                    .bg(hsla(0.0, 0.0, 0.96, 1.0))
                     .child(
                         v_flex()
-                            .size_full()
                             .gap_2()
                             .child(Label::new("Excel 文件路径"))
-                            .child(
-                                div()
-                                    .w_full()
-                                    .child(this.file_path_input.clone())
-                            )
+                            .child(div().w_full().child(this.file_path_input.clone()))
                             .child(
                                 h_flex()
                                     .w_full()
@@ -865,26 +925,34 @@ impl Render for FormPanel {
                                                     });
                                                 }
                                             })
-                                            .flex_grow()
+                                            .flex_grow(),
                                     )
                                     .child({
-                                        let current_sheet_label = this.current_sheet.as_deref().unwrap_or("选择工作表").to_string();
+                                        let current_sheet_label = this
+                                            .current_sheet
+                                            .as_deref()
+                                            .unwrap_or("选择工作表")
+                                            .to_string();
                                         let button = Button::new("sheet")
                                             .label(current_sheet_label)
                                             .flex_grow();
-                                        
+
                                         let db_path = this.db_path.clone();
                                         button.popup_menu(move |menu, _, _| {
                                             let mut menu = menu;
                                             if let Ok(conn) = Connection::open(&db_path) {
-                                                if let Ok(mut stmt) = conn.prepare("SELECT name FROM sheets ORDER BY id") {
-                                                    if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                                                if let Ok(mut stmt) = conn
+                                                    .prepare("SELECT name FROM sheets ORDER BY id")
+                                                {
+                                                    if let Ok(rows) = stmt.query_map([], |row| {
+                                                        row.get::<_, String>(0)
+                                                    }) {
                                                         for sheet_name in rows.flatten() {
                                                             menu = menu.menu(
                                                                 sheet_name.clone(),
                                                                 Box::new(ChangeSheet {
                                                                     sheet_name: sheet_name.clone(),
-                                                                })
+                                                                }),
                                                             );
                                                         }
                                                     }
@@ -897,34 +965,16 @@ impl Render for FormPanel {
                     )
                     .child(
                         v_flex()
-                            .size_full()
                             .gap_2()
                             .child(Label::new("工程类型"))
-                            .child(
-                                Button::new("project_type")
-                                    .label(&this.project_type)
-                                    .w_full()
-                                    .popup_menu(move |menu, _, _| {
-                                        menu.menu("道路工程", Box::new(SetProjectType("道路工程".to_string())))
-                                           .menu("交通工程", Box::new(SetProjectType("交通工程".to_string())))
-                                    }),
-                            ),
+                            .child(self.project_type_dropdown.clone()),
                     )
                     .child(
                         v_flex()
-                            .size_full()
                             .gap_2()
                             .child(Label::new("道路类型"))
-                            .child(
-                                Button::new("road_type")
-                                    .label(&this.road_type)
-                                    .w_full()
-                                    .popup_menu(move |menu, _, _| {
-                                        menu.menu("主干路 62 m2", Box::new(SetRoadType("主干路 62 m2".to_string())))
-                                           .menu("次干路59cm m2", Box::new(SetRoadType("次干路59cm m2".to_string())))
-                                    }),
-                            ),
-                    )
+                            .child(self.road_type_dropdown.clone()),
+                    ),
             )
     }
 }
@@ -935,7 +985,11 @@ struct TablePanel {
 }
 
 impl TablePanel {
-    pub fn view(story: Entity<ExcelStory>, _window: &mut Window, cx: &mut Context<DockArea>) -> Arc<dyn PanelView> {
+    pub fn view(
+        story: Entity<ExcelStory>,
+        _window: &mut Window,
+        cx: &mut Context<DockArea>,
+    ) -> Arc<dyn PanelView> {
         let panel = cx.new(|cx| Self {
             story,
             focus_handle: cx.focus_handle(),
@@ -943,6 +997,8 @@ impl TablePanel {
         Arc::new(panel)
     }
 }
+
+impl EventEmitter<PanelEvent> for TablePanel {}
 
 impl Panel for TablePanel {
     fn panel_name(&self) -> &'static str {
@@ -954,8 +1010,6 @@ impl Panel for TablePanel {
     }
 }
 
-impl EventEmitter<gpui_component::dock::PanelEvent> for TablePanel {}
-
 impl Focusable for TablePanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -965,9 +1019,7 @@ impl Focusable for TablePanel {
 impl Render for TablePanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let this = self.story.read(cx);
-        div()
-            .size_full()
-            .child(this.table.clone())
+        div().size_full().child(this.table.clone())
     }
 }
 
@@ -1003,19 +1055,24 @@ impl ResultTableDelegate {
             "机械".to_string(),
             "小计".to_string(),
         ];
-        
+
         Self {
             rows: vec![],
             columns,
         }
     }
 
-    fn update_data(&mut self, project_type: &str, road_type: &str, db_path: &str) -> SqliteResult<()> {
+    fn update_data(
+        &mut self,
+        _project_type: &str,
+        _road_type: &str,
+        db_path: &str,
+    ) -> SqliteResult<()> {
         let conn = Connection::open(db_path)?;
-        
+
         // 清空现有数据
         self.rows.clear();
-        
+
         // 只查询编码和对应的碳排放因子
         let mut stmt = conn.prepare(
             "
@@ -1032,15 +1089,27 @@ impl ResultTableDelegate {
              AND e.编码 IS NOT NULL
              AND e.编码 != ''
              ORDER BY e.id;
-            "
+            ",
         )?;
-        
+
         let rows = stmt.query_map([], |row| {
             let 名称及规格: String = row.get(0)?;
-            let 人工碳排放: f64 = if row.get::<_, f64>(1)? == 0.0 { 1.0 } else { row.get(1)? };
-            let 材料碳排放: f64 = if row.get::<_, f64>(2)? == 0.0 { 1.0 } else { row.get(2)? };
-            let 机械碳排放: f64 = if row.get::<_, f64>(3)? == 0.0 { 1.0 } else { row.get(3)? };
-            
+            let 人工碳排放: f64 = if row.get::<_, f64>(1)? == 0.0 {
+                1.0
+            } else {
+                row.get(1)?
+            };
+            let 材料碳排放: f64 = if row.get::<_, f64>(2)? == 0.0 {
+                1.0
+            } else {
+                row.get(2)?
+            };
+            let 机械碳排放: f64 = if row.get::<_, f64>(3)? == 0.0 {
+                1.0
+            } else {
+                row.get(3)?
+            };
+
             Ok(ResultRow {
                 序号: String::new(),
                 项目名称: 名称及规格,
@@ -1053,13 +1122,13 @@ impl ResultTableDelegate {
                 小计: String::new(),
             })
         })?;
-        
+
         for row in rows {
             if let Ok(row) = row {
                 self.rows.push(row);
             }
         }
-        
+
         Ok(())
     }
 }
@@ -1114,7 +1183,7 @@ impl TableDelegate for ResultTableDelegate {
             8 => row.小计.clone(),
             _ => String::new(),
         };
-        
+
         div().child(value)
     }
 }
@@ -1127,30 +1196,38 @@ struct ResultPanel {
 }
 
 impl ResultPanel {
-    pub fn view(story: Entity<ExcelStory>, window: &mut Window, cx: &mut Context<DockArea>) -> Arc<dyn PanelView> {
+    pub fn view(
+        story: Entity<ExcelStory>,
+        window: &mut Window,
+        cx: &mut Context<DockArea>,
+    ) -> Arc<dyn PanelView> {
         let delegate = ResultTableDelegate::new();
         let table = cx.new(|cx| Table::new(delegate, window, cx));
-        
+
         let panel = cx.new(|cx| {
             let table_clone = table.clone();
-            let subscription = cx.subscribe_in(&story, window, move |_this, story, _: &UpdateResultTable, window, cx| {
-                let story_data = story.read(cx);
-                let project_type = story_data.project_type.clone();
-                // dbg!(&project_type);
-                let road_type = story_data.road_type.clone();
-                let db_path = story_data.db_path.clone();
-                drop(story_data);
-                
-                table_clone.update(cx, |table, cx| {
-                    if let Err(_) = table.delegate_mut().update_data(
-                        &project_type,
-                        &road_type,
-                        &db_path
-                    ) {
-                        table.refresh(cx);
-                    }
-                });
-            });
+            let subscription = cx.subscribe_in(
+                &story,
+                window,
+                move |_this, story, _: &UpdateResultTable, window, cx| {
+                    let story_data = story.read(cx);
+                    let project_type = story_data.project_type.clone();
+                    // dbg!(&project_type);
+                    let road_type = story_data.road_type.clone();
+                    let db_path = story_data.db_path.clone();
+                    drop(story_data);
+
+                    table_clone.update(cx, |table, cx| {
+                        if let Err(_) =
+                            table
+                                .delegate_mut()
+                                .update_data(&project_type, &road_type, &db_path)
+                        {
+                            table.refresh(cx);
+                        }
+                    });
+                },
+            );
 
             Self {
                 table,
@@ -1159,10 +1236,12 @@ impl ResultPanel {
                 _subscriptions: vec![subscription],
             }
         });
-        
+
         Arc::new(panel)
     }
 }
+
+impl EventEmitter<PanelEvent> for ResultPanel {}
 
 impl Panel for ResultPanel {
     fn panel_name(&self) -> &'static str {
@@ -1174,8 +1253,6 @@ impl Panel for ResultPanel {
     }
 }
 
-impl EventEmitter<gpui_component::dock::PanelEvent> for ResultPanel {}
-
 impl Focusable for ResultPanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -1183,10 +1260,8 @@ impl Focusable for ResultPanel {
 }
 
 impl Render for ResultPanel {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .child(self.table.clone())
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().child(self.table.clone())
     }
 }
 
@@ -1197,6 +1272,6 @@ fn main() {
         story::init(cx);
         cx.activate(true);
 
-        story::create_new_window("碳排放计算程序", ExcelStory::view, cx);
+        story::create_new_window("碳排放计算程序", ExcelStory::new_view, cx);
     });
-} 
+}

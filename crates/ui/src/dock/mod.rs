@@ -69,6 +69,20 @@ pub struct DockArea {
     _subscriptions: Vec<Subscription>,
 }
 
+impl DockArea {
+    pub fn left_dock(&self) -> Option<Entity<Dock>> {
+        self.left_dock.clone()
+    }
+
+    pub fn bottom_dock(&self) -> Option<Entity<Dock>> {
+        self.bottom_dock.clone()
+    }
+
+    pub fn right_dock(&self) -> Option<Entity<Dock>> {
+        self.right_dock.clone()
+    }
+}
+
 /// DockItem is a tree structure that represents the layout of the dock.
 #[derive(Clone)]
 pub enum DockItem {
