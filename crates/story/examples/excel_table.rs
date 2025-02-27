@@ -6,7 +6,7 @@ use gpui::{
 };
 use gpui_component::{
     button::Button,
-    dock::{DockArea, DockPlacement, Panel, PanelEvent, PanelView},
+    dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView},
     dropdown::{Dropdown, DropdownEvent},
     h_flex,
     input::TextInput,
@@ -282,7 +282,7 @@ impl ExcelStory {
         let delegate = ExcelTableDelegate::new();
         let table = cx.new(|cx| Table::new(delegate, window, cx));
 
-        // Initialize dock area with just one panel
+        // Initialize dock area
         let dock_area = cx.new(|cx| DockArea::new("excel-table", Some(1), window, cx));
 
         // Create data directory if it doesn't exist
@@ -292,6 +292,41 @@ impl ExcelStory {
 
         // Initialize database
         Self::init_database(&db_path).expect("Failed to initialize database");
+
+        let story_entity = cx.entity();
+
+        let weak_dock_area = dock_area.downgrade();
+        // Configure dock area layout
+       dock_area.update(cx, |dock_area, cx| {
+            // Left panel (Form panel)
+            let left_panel = DockItem::tab(
+                FormPanel::view(story_entity.clone(), window, cx),
+                &weak_dock_area,
+                window,
+                cx,
+            );
+
+            // Center panel (Result panel)
+            let center_panel = DockItem::tab(
+                ResultPanel::view(story_entity.clone(), window, cx),
+                &weak_dock_area,
+                window,
+                cx,
+            );
+
+            // Right panel (Table panel)
+            let right_panel = DockItem::tab(
+                TablePanel::view(story_entity.clone(), window, cx),
+                &weak_dock_area,
+                window,
+                cx,
+            );
+
+            // Set panels in dock area
+            dock_area.set_center(center_panel, window, cx);
+            dock_area.set_left_dock(left_panel, Some(px(300.)), true, window, cx);
+            dock_area.set_right_dock(right_panel, Some(px(600.)), true, window, cx);
+        });
 
         let excel_story = Self {
             dock_area,
@@ -304,28 +339,6 @@ impl ExcelStory {
             road_type: String::new(),
             db_path,
         };
-
-        let story_entity = cx.entity();
-        // Add panels to dock area
-        excel_story.dock_area.update(cx, |dock_area, cx| {
-            // Add form panel to the left
-            let form_panel = FormPanel::view(story_entity.clone(), window, cx);
-            dock_area.add_panel(form_panel, DockPlacement::Left, None, window, cx);
-            // 设置左侧面板宽度为 300px
-            if let Some(left_dock) = dock_area.left_dock().as_ref() {
-                left_dock.update(cx, |dock, cx| {
-                    dock.set_size(px(300.), window, cx);
-                });
-            }
-
-            // Add result panel to the center
-            let result_panel = ResultPanel::view(story_entity.clone(), window, cx);
-            dock_area.add_panel(result_panel, DockPlacement::Center, None, window, cx);
-
-            // Add table panel to the right
-            let table_panel = TablePanel::view(story_entity.clone(), window, cx);
-            dock_area.add_panel(table_panel, DockPlacement::Right, None, window, cx);
-        });
 
         // Load resource data
         excel_story.load_resource_data(window, cx);
@@ -815,7 +828,7 @@ impl FormPanel {
         story: Entity<ExcelStory>,
         window: &mut Window,
         cx: &mut Context<DockArea>,
-    ) -> Arc<dyn PanelView> {
+    ) -> Entity<Self> {
         let project_types = vec!["道路工程".into(), "交通工程".into()];
         let project_type_dropdown = cx.new(|cx| {
             Dropdown::new("project-type", project_types, None, window, cx)
@@ -830,7 +843,7 @@ impl FormPanel {
                 .placeholder("请选择道路类型")
         });
 
-        let form_panel = cx.new(|cx| {
+        let view = cx.new(|cx| {
             let story = story.clone();
             let project_type_dropdown = project_type_dropdown.clone();
             let road_type_dropdown = road_type_dropdown.clone();
@@ -870,7 +883,7 @@ impl FormPanel {
             panel
         });
 
-        Arc::new(form_panel)
+        view
     }
 }
 
@@ -989,12 +1002,12 @@ impl TablePanel {
         story: Entity<ExcelStory>,
         _window: &mut Window,
         cx: &mut Context<DockArea>,
-    ) -> Arc<dyn PanelView> {
-        let panel = cx.new(|cx| Self {
+    ) -> Entity<Self> {
+        let view = cx.new(|cx| Self {
             story,
             focus_handle: cx.focus_handle(),
         });
-        Arc::new(panel)
+        view
     }
 }
 
@@ -1064,14 +1077,19 @@ impl ResultTableDelegate {
 
     fn update_data(
         &mut self,
-        _project_type: &str,
-        _road_type: &str,
+        project_type: &str,
+        road_type: &str,
         db_path: &str,
     ) -> SqliteResult<()> {
-        let conn = Connection::open(db_path)?;
-
         // 清空现有数据
         self.rows.clear();
+
+        // 如果工程类型或道路类型为空，直接返回
+        if project_type.is_empty() || road_type.is_empty() {
+            return Ok(());
+        }
+
+        let conn = Connection::open(db_path)?;
 
         // 只查询编码和对应的碳排放因子
         let mut stmt = conn.prepare(
@@ -1200,11 +1218,11 @@ impl ResultPanel {
         story: Entity<ExcelStory>,
         window: &mut Window,
         cx: &mut Context<DockArea>,
-    ) -> Arc<dyn PanelView> {
+    ) -> Entity<Self> {
         let delegate = ResultTableDelegate::new();
         let table = cx.new(|cx| Table::new(delegate, window, cx));
 
-        let panel = cx.new(|cx| {
+        let view = cx.new(|cx| {
             let table_clone = table.clone();
             let subscription = cx.subscribe_in(
                 &story,
@@ -1212,19 +1230,27 @@ impl ResultPanel {
                 move |_this, story, _: &UpdateResultTable, window, cx| {
                     let story_data = story.read(cx);
                     let project_type = story_data.project_type.clone();
-                    // dbg!(&project_type);
                     let road_type = story_data.road_type.clone();
                     let db_path = story_data.db_path.clone();
                     drop(story_data);
 
                     table_clone.update(cx, |table, cx| {
-                        if let Err(_) =
-                            table
-                                .delegate_mut()
-                                .update_data(&project_type, &road_type, &db_path)
-                        {
-                            table.refresh(cx);
+                        if project_type.is_empty() || road_type.is_empty() {
+                            window.push_notification(
+                                Notification::new("请先选择工程类型和道路类型")
+                                    .with_type(NotificationType::Warning),
+                                cx,
+                            );
                         }
+                        
+                        if let Err(e) = table.delegate_mut().update_data(&project_type, &road_type, &db_path) {
+                            window.push_notification(
+                                Notification::new(format!("更新数据失败: {}", e))
+                                    .with_type(NotificationType::Error),
+                                cx,
+                            );
+                        }
+                        table.refresh(cx);
                     });
                 },
             );
@@ -1237,7 +1263,7 @@ impl ResultPanel {
             }
         });
 
-        Arc::new(panel)
+        view
     }
 }
 
