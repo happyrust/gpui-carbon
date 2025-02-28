@@ -1,0 +1,15 @@
+-- database: ../../../data/excel_data.db
+
+ SELECT DISTINCT 
+                e.名称及规格,
+                COALESCE(l.carbon_factor, 0) as 人工碳排放,
+                COALESCE(m.carbon_factor, 0) as 材料碳排放,
+                COALESCE(mc.carbon_factor, 0) as 机械碳排放
+             FROM excel_data e
+             LEFT JOIN labor l ON e.编码 = l.code
+             LEFT JOIN material m ON e.编码 = m.code
+             LEFT JOIN machine mc ON e.编码 = mc.code
+             WHERE e.sheet_id == 1 
+             AND e.编码 IS NOT NULL
+             AND e.编码 != ''
+             ORDER BY e.id;
