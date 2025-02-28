@@ -291,7 +291,7 @@ impl ExcelStory {
         dock_area.update(cx, |dock_area, cx| {
             // Left panel (Form panel)
             let left_panel = DockItem::tab(
-                ParamFormPanel::view(story_entity.clone(), window, cx),
+                ParamFormPane::view(story_entity.clone(), window, cx),
                 &weak_dock_area,
                 window,
                 cx,
@@ -472,6 +472,73 @@ impl ExcelStory {
         Ok((self.required_columns.clone(), data))
     }
 
+    /// 从数据库中提取所有工程类型和道路类型
+    fn extract_project_and_road_types(&self) -> SqliteResult<(Vec<String>, Vec<String>)> {
+        let conn = Connection::open(&self.db_path)?;
+        let mut stmt = conn.prepare("SELECT name FROM sheets ORDER BY id")?;
+        
+        let mut project_types = std::collections::HashSet::new();
+        let mut road_types = std::collections::HashSet::new();
+
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        
+        for sheet_name in rows.flatten() {
+            if let Some((project_type, road_type)) = Self::parse_sheet_name(&sheet_name) {
+                project_types.insert(project_type);
+                road_types.insert(road_type);
+            }
+        }
+
+        let mut project_types: Vec<_> = project_types.into_iter().collect();
+        let mut road_types: Vec<_> = road_types.into_iter().collect();
+        project_types.sort();
+        road_types.sort();
+
+        Ok((project_types, road_types))
+    }
+
+    /// 从工作表名称中解析出工程类型和道路类型
+    fn parse_sheet_name(sheet_name: &str) -> Option<(String, String)> {
+        // 假设格式为: "xxx【project_type road_type】"
+        if let Some(start) = sheet_name.find('【') {
+            if let Some(end) = sheet_name.find('】') {
+                let content = &sheet_name[start + 1..end];
+                if let Some(space_idx) = content.find(' ') {
+                    let project_type = content[..space_idx].trim().to_string();
+                    let road_type = content[space_idx + 1..].trim().to_string();
+                    if !project_type.is_empty() && !road_type.is_empty() {
+                        return Some((project_type, road_type));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn update_type_dropdowns(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Ok((project_types, road_types)) = self.extract_project_and_road_types() {
+            // 更新工程类型下拉框
+            // if let Some(panel) = self.dock_area.find_panel::<ParamFormPane>("ParamFormPane") {
+            //     panel.update(cx, |panel, cx| {
+            //         panel.project_type_dropdown.update(cx, |dropdown, cx| {
+            //             dropdown.set_items(
+            //                 project_types.into_iter().map(SharedString::from).collect(),
+            //                 window,
+            //                 cx,
+            //             );
+            //         });
+            //         panel.road_type_dropdown.update(cx, |dropdown, cx| {
+            //             dropdown.set_items(
+            //                 road_types.into_iter().map(SharedString::from).collect(),
+            //                 window,
+            //                 cx,
+            //             );
+            //         });
+            //     });
+            // }
+        }
+    }
+
     fn load_excel(&mut self, file_path: &str, window: &mut Window, cx: &mut Context<Self>) {
         let path = PathBuf::from(file_path);
 
@@ -485,10 +552,7 @@ impl ExcelStory {
                         // Start transaction
                         let tx = conn.transaction().unwrap();
 
-                        // Clear existing data
-                        tx.execute("DELETE FROM excel_data", []).unwrap();
-                        tx.execute("DELETE FROM sheets", []).unwrap();
-
+                        // Don't clear all data, we'll handle updates per sheet
                         let mut success = false;
 
                         for sheet_name in &sheet_names {
@@ -511,7 +575,30 @@ impl ExcelStory {
                                             header_columns.values().any(|col| col == required_col)
                                         })
                                     }) {
-                                        // Insert sheet
+                                        // Check if sheet exists and get its ID
+                                        let sheet_id: Option<i64> = tx
+                                            .query_row(
+                                                "SELECT id FROM sheets WHERE name = ?",
+                                                params![sheet_name],
+                                                |row| row.get(0),
+                                            )
+                                            .ok();
+
+                                        // If sheet exists, delete its data
+                                        if let Some(id) = sheet_id {
+                                            tx.execute(
+                                                "DELETE FROM excel_data WHERE sheet_id = ?",
+                                                params![id],
+                                            )
+                                            .unwrap();
+                                            tx.execute(
+                                                "DELETE FROM sheets WHERE id = ?",
+                                                params![id],
+                                            )
+                                            .unwrap();
+                                        }
+
+                                        // Insert or update sheet
                                         tx.execute(
                                             "INSERT INTO sheets (name) VALUES (?)",
                                             params![sheet_name],
@@ -588,6 +675,9 @@ impl ExcelStory {
                                 .unwrap()
                                 .map(|r| r.unwrap())
                                 .collect();
+
+                            // Update dropdowns with new project and road types
+                            self.update_type_dropdowns(window, cx);
 
                             // Load first sheet
                             if let Some(first_sheet) = sheet_names.first() {
@@ -783,7 +873,7 @@ impl Render for ExcelStory {
     }
 }
 
-struct ParamFormPanel {
+struct ParamFormPane {
     story: Entity<ExcelStory>,
     focus_handle: FocusHandle,
     project_type_dropdown: Entity<Dropdown<Vec<SharedString>>>,
@@ -791,7 +881,7 @@ struct ParamFormPanel {
     file_path_input: Entity<TextInput>,
 }
 
-impl ParamFormPanel {
+impl ParamFormPane {
     pub fn view(
         story: Entity<ExcelStory>,
         window: &mut Window,
@@ -871,11 +961,11 @@ impl ParamFormPanel {
     }
 }
 
-impl EventEmitter<PanelEvent> for ParamFormPanel {}
+impl EventEmitter<PanelEvent> for ParamFormPane {}
 
-impl Panel for ParamFormPanel {
+impl Panel for ParamFormPane {
     fn panel_name(&self) -> &'static str {
-        "FormPanel"
+        "ParamFormPane"
     }
 
     fn title(&self, _window: &Window, _cx: &App) -> gpui::AnyElement {
@@ -883,13 +973,13 @@ impl Panel for ParamFormPanel {
     }
 }
 
-impl Focusable for ParamFormPanel {
+impl Focusable for ParamFormPane {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for ParamFormPanel {
+impl Render for ParamFormPane {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // let this = self.story.read(cx);
         let file_path_input = self.file_path_input.clone();
