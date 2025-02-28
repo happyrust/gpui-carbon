@@ -750,7 +750,6 @@ impl Tiles {
         if !is_occluded(&drag_bar_bounds) {
             h_flex()
                 .id("drag-bar")
-                .cursor_grab()
                 .absolute()
                 .w_full()
                 .h(DRAG_BAR_HEIGHT)
