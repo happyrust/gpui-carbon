@@ -391,7 +391,10 @@ impl Node {
                             Node::Paragraph(_) => {
                                 items.push(
                                     h_flex()
-                                        .items_center()
+                                        .relative()
+                                        .items_start()
+                                        .content_start()
+                                        .flex_1()
                                         .when(!state.todo && checked.is_none(), |this| {
                                             this.child(list_item_prefix(
                                                 ix,
@@ -400,9 +403,11 @@ impl Node {
                                             ))
                                         })
                                         .when_some(checked, |this, checked| {
+                                            // Checkmark
                                             this.child(
                                                 div()
                                                     .flex()
+                                                    .mt(rems(0.4))
                                                     .mr_1p5()
                                                     .size(rems(0.875))
                                                     .items_center()
@@ -419,16 +424,18 @@ impl Node {
                                                     }),
                                             )
                                         })
-                                        .child(child.render(
-                                            Some(ListState {
-                                                depth: state.depth + 1,
-                                                ordered: state.ordered,
-                                                todo: checked.is_some(),
-                                            }),
-                                            true,
-                                            text_view_style,
-                                            window,
-                                            cx,
+                                        .child(div().flex_1().overflow_hidden().child(
+                                            child.render(
+                                                Some(ListState {
+                                                    depth: state.depth + 1,
+                                                    ordered: state.ordered,
+                                                    todo: checked.is_some(),
+                                                }),
+                                                true,
+                                                text_view_style,
+                                                window,
+                                                cx,
+                                            ),
                                         )),
                                 );
                             }
@@ -578,8 +585,10 @@ impl Node {
                     _ => (rems(1.), FontWeight::NORMAL),
                 };
 
+                let text_size = text_size.to_pixels(text_view_style.heading_base_font_size);
+
                 h_flex()
-                    .mb(rems(0.5))
+                    .mb(rems(0.3))
                     .whitespace_normal()
                     .text_size(text_size)
                     .font_weight(font_weight)

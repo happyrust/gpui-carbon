@@ -37,8 +37,8 @@ Here is a link to [Google](https://www.google.com), and another to [Rust](https:
 
 ##### Bulleted List
 
-- Bullet 1
-- Bullet 2
+- Bullet 1, this is very long and needs to be wrapped to the next line, display should be wrapped to the next line as well.
+- Bullet 2, the second bullet item is also long and needs to be wrapped to the next line.
   - Bullet 2.1
     - Bullet 2.1.1
       - Bullet 2.1.1.1
@@ -57,8 +57,8 @@ Here is a link to [Google](https://www.google.com), and another to [Rust](https:
 
 ##### To-Do List
 
-- [x] Task 1
-- [ ] Task 2
+- [x] Task 1, a long long text task, this line is very long and needs to be wrapped to the next line, display should be wrapped to the next line as well.
+- [ ] Task 2, going to do something if there is a long text that needs to be wrapped to the next line.
 - [ ] Task 3
 
 #### Heading for Code
