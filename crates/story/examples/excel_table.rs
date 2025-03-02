@@ -1,6 +1,9 @@
 use calamine::{open_workbook, Reader, Xlsx};
+use fake::faker::name;
 use gpui::{
-    div, hsla, impl_actions, px, App, AppContext, Application, BorrowAppContext, Context, Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels, Render, SharedString, Size, Styled, Subscription, Window
+    div, hsla, impl_actions, px, App, AppContext, Application, BorrowAppContext, Context, Edges,
+    Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
+    Pixels, Render, SharedString, Size, Styled, Subscription, Window,
 };
 use gpui_component::{
     button::Button,
@@ -44,9 +47,18 @@ pub struct ChangeSheet {
 #[derive(Clone, Debug, PartialEq, Deserialize, JsonSchema, Serialize)]
 pub struct UpdateResultTable;
 
+#[derive(Clone, Debug, PartialEq, Deserialize, JsonSchema, Serialize)]
+pub struct UpdateTypesUIEvent;
+
 impl_actions!(
     excel_table,
-    [SetProjectType, SetRoadType, ChangeSheet, UpdateResultTable]
+    [
+        SetProjectType,
+        SetRoadType,
+        ChangeSheet,
+        UpdateResultTable,
+        UpdateTypesUIEvent
+    ]
 );
 
 struct ExcelTableDelegate {
@@ -249,6 +261,7 @@ impl Focusable for ExcelStory {
 }
 
 impl EventEmitter<UpdateResultTable> for ExcelStory {}
+impl EventEmitter<UpdateTypesUIEvent> for ExcelStory {}
 
 impl ExcelStory {
     pub fn view(window: &mut Window, cx: &mut Context<Self>) -> Entity<Self> {
@@ -282,7 +295,7 @@ impl ExcelStory {
         let db_path = format!("{}/excel_data.db", data_dir);
 
         // Initialize database
-        Self::init_database(&db_path).expect("Failed to initialize database");
+        Self::init_carbonref_database(&db_path).expect("Failed to initialize 人材机数据库 ");
 
         let story_entity = cx.entity();
 
@@ -336,7 +349,7 @@ impl ExcelStory {
         excel_story
     }
 
-    fn init_database(db_path: &str) -> SqliteResult<()> {
+    fn init_carbonref_database(db_path: &str) -> SqliteResult<()> {
         let conn = Connection::open(db_path)?;
 
         // Create sheets table
@@ -476,12 +489,12 @@ impl ExcelStory {
     fn extract_project_and_road_types(&self) -> SqliteResult<(Vec<String>, Vec<String>)> {
         let conn = Connection::open(&self.db_path)?;
         let mut stmt = conn.prepare("SELECT name FROM sheets ORDER BY id")?;
-        
+
         let mut project_types = std::collections::HashSet::new();
         let mut road_types = std::collections::HashSet::new();
 
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        
+
         for sheet_name in rows.flatten() {
             if let Some((project_type, road_type)) = Self::parse_sheet_name(&sheet_name) {
                 project_types.insert(project_type);
@@ -500,25 +513,29 @@ impl ExcelStory {
     /// 从工作表名称中解析出工程类型和道路类型
     fn parse_sheet_name(sheet_name: &str) -> Option<(String, String)> {
         // 假设格式为: "xxx【project_type road_type】"
-        if let Some(start) = sheet_name.find('【') {
-            if let Some(end) = sheet_name.find('】') {
-                let content = &sheet_name[start + 1..end];
-                if let Some(space_idx) = content.find(' ') {
-                    let project_type = content[..space_idx].trim().to_string();
-                    let road_type = content[space_idx + 1..].trim().to_string();
-                    if !project_type.is_empty() && !road_type.is_empty() {
-                        return Some((project_type, road_type));
-                    }
-                }
+        // todo 空格划分？
+        let mut names = sheet_name.trim().split_whitespace().into_iter();
+        let project_type =  names.next()?.to_string();
+        let road_type = names.fold(None, |mut acc: Option<String>, s| {
+            if acc.is_none() {
+                acc = Some(s.to_string());
+            } else {
+                acc.as_mut().unwrap().push_str(s);
             }
-        }
-        None
+            acc
+        })?;
+
+        // dbg!()
+
+        Some((project_type, road_type))
     }
 
-    fn update_type_dropdowns(&self, window: &mut Window, cx: &mut Context<Self>) {
+    fn update_types_ui(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Ok((project_types, road_types)) = self.extract_project_and_road_types() {
+            cx.emit(UpdateTypesUIEvent);
+            //send event to ParamFormPane
             // 更新工程类型下拉框
-            // if let Some(panel) = self.dock_area.find_panel::<ParamFormPane>("ParamFormPane") {
+            // if let Some(panel) = self.dock_area.find_("ParamFormPane", cx) {
             //     panel.update(cx, |panel, cx| {
             //         panel.project_type_dropdown.update(cx, |dropdown, cx| {
             //             dropdown.set_items(
@@ -585,25 +602,24 @@ impl ExcelStory {
                                             .ok();
 
                                         // If sheet exists, delete its data
-                                        if let Some(id) = sheet_id {
-                                            tx.execute(
-                                                "DELETE FROM excel_data WHERE sheet_id = ?",
-                                                params![id],
-                                            )
-                                            .unwrap();
-                                            tx.execute(
-                                                "DELETE FROM sheets WHERE id = ?",
-                                                params![id],
-                                            )
-                                            .unwrap();
-                                        }
+                                        // if let Some(id) = sheet_id {
+                                        //     tx.execute(
+                                        //         "DELETE FROM excel_data WHERE sheet_id = ?",
+                                        //         params![id],
+                                        //     )
+                                        //     .unwrap();
+                                        //     tx.execute(
+                                        //         "DELETE FROM sheets WHERE id = ?",
+                                        //         params![id],
+                                        //     )
+                                        //     .unwrap();
+                                        // }
 
                                         // Insert or update sheet
                                         tx.execute(
                                             "INSERT INTO sheets (name) VALUES (?)",
                                             params![sheet_name],
-                                        )
-                                        .unwrap();
+                                        );
                                         let sheet_id = tx.last_insert_rowid();
 
                                         // Create column mapping
@@ -676,8 +692,9 @@ impl ExcelStory {
                                 .map(|r| r.unwrap())
                                 .collect();
 
+                            // self.project_type
                             // Update dropdowns with new project and road types
-                            self.update_type_dropdowns(window, cx);
+                            self.update_types_ui(window, cx);
 
                             // Load first sheet
                             if let Some(first_sheet) = sheet_names.first() {
@@ -796,10 +813,11 @@ impl ExcelStory {
                                                     .map(|c| c.to_string())
                                                     .unwrap_or_default();
 
+                                                    // if empty 1.0
                                                 let carbon_factor = row
                                                     .get(column_indices["单位碳排放因子"])
                                                     .and_then(|c| c.to_string().parse::<f64>().ok())
-                                                    .unwrap_or_default();
+                                                    .unwrap_or(1.0);
 
                                                 stmt.execute(params![
                                                     code,
@@ -954,6 +972,24 @@ impl ParamFormPane {
             })
             .detach();
 
+            // UpdateTypesUIEvent
+            cx.subscribe_in(&story, window, {
+                let story = story.clone();
+                move |_, _dropdown, event: &UpdateTypesUIEvent, _window, cx| {
+                    dbg!("UpdateTypesUIEvent");
+                    // if let DropdownEvent::Confirm(Some(value)) = event {
+                    //     story.update(cx, |story, cx| {
+                    //         story.road_type = value.to_string();
+                    //         // 只有当两个类型都已选择时才发送更新事件
+                    //         if !story.project_type.is_empty() && !story.road_type.is_empty() {
+                    //             cx.emit(UpdateResultTable);
+                    //         }
+                    //     });
+                    // }
+                }
+            })
+            .detach();
+
             panel
         });
 
@@ -997,38 +1033,49 @@ impl Render for ParamFormPane {
                         v_flex()
                             .gap_2()
                             .child(Label::new("Excel 文件路径"))
-                            .child(div().w_full().child(
-                                h_flex()
-                                    .gap_1()
-                                    .child(div().flex_grow().child(file_path_input.clone()))
-                                    .child(
-                                        Button::new("select-file")
-                                            .label("...")
-                                            .on_click({
+                            .child(
+                                div().w_full().child(
+                                    h_flex()
+                                        .gap_1()
+                                        .child(div().flex_grow().child(file_path_input.clone()))
+                                        .child(Button::new("select-file").label("...").on_click({
+                                            let file_path_input = file_path_input.clone();
+                                            move |_, window, cx| {
                                                 let file_path_input = file_path_input.clone();
-                                                move |_, window, cx| {
-                                                    let file_path_input = file_path_input.clone();
-                                                    window.spawn(cx, |mut awc| async move {
-                                                        if let Some(path) = rfd::AsyncFileDialog::new()
-                                                            .add_filter("Excel files", &["xlsx"])
-                                                            .set_title("选择 Excel 文件")
-                                                            .pick_file()
-                                                            .await
+                                                window
+                                                    .spawn(cx, |mut awc| async move {
+                                                        if let Some(path) =
+                                                            rfd::AsyncFileDialog::new()
+                                                                .add_filter(
+                                                                    "Excel files",
+                                                                    &["xlsx"],
+                                                                )
+                                                                .set_title("选择 Excel 文件")
+                                                                .pick_file()
+                                                                .await
                                                         {
-                                                            let path_str = path.path().to_string_lossy().to_string();
+                                                            let path_str = path
+                                                                .path()
+                                                                .to_string_lossy()
+                                                                .to_string();
                                                             // awc.update_entity(handle, update)
-                                                            awc.update(|win, cx|{
-                                                                file_path_input.update(cx, |input, cx| {
-                                                                    input.set_text(&path_str, win, cx);
-                                                                });
+                                                            awc.update(|win, cx| {
+                                                                file_path_input.update(
+                                                                    cx,
+                                                                    |input, cx| {
+                                                                        input.set_text(
+                                                                            &path_str, win, cx,
+                                                                        );
+                                                                    },
+                                                                );
                                                             });
                                                         }
                                                     })
                                                     .detach();
-                                                }
-                                            })
-                                    ),
-                            ))
+                                            }
+                                        })),
+                                ),
+                            )
                             .child(
                                 h_flex()
                                     .gap_2()
@@ -1150,7 +1197,7 @@ struct ResultTableDelegate {
     columns: Vec<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 struct ResultRow {
     序号: String,
     项目名称: String,
@@ -1198,12 +1245,20 @@ impl ResultTableDelegate {
         }
 
         let conn = Connection::open(db_path)?;
+        let sheet_name = format!("{project_type} {road_type}");
+
+        let sheet_id = if project_type == "道路工程" {
+            1
+        } else {
+            2
+        };
 
         // 只查询编码和对应的碳排放因子
         let mut stmt = conn.prepare(
             "
             SELECT DISTINCT 
                 e.名称及规格,
+                e.数量,
                 COALESCE(l.carbon_factor, 0) as 人工碳排放,
                 COALESCE(m.carbon_factor, 0) as 材料碳排放,
                 COALESCE(mc.carbon_factor, 0) as 机械碳排放
@@ -1211,49 +1266,78 @@ impl ResultTableDelegate {
              LEFT JOIN labor l ON e.编码 = l.code
              LEFT JOIN material m ON e.编码 = m.code
              LEFT JOIN machine mc ON e.编码 = mc.code
-             WHERE e.sheet_id == 1 
+             WHERE e.sheet_id == :sheet_id
              AND e.编码 IS NOT NULL
              AND e.编码 != ''
              ORDER BY e.id;
             ",
         )?;
 
-        let rows = stmt.query_map([], |row| {
+        let mut rows = stmt.query_map([sheet_id], |row| {
             let 名称及规格: String = row.get(0)?;
-            let 人工碳排放: f64 = if row.get::<_, f64>(1)? == 0.0 {
-                1.0
-            } else {
-                row.get(1)?
-            };
-            let 材料碳排放: f64 = if row.get::<_, f64>(2)? == 0.0 {
-                1.0
-            } else {
-                row.get(2)?
-            };
-            let 机械碳排放: f64 = if row.get::<_, f64>(3)? == 0.0 {
-                1.0
-            } else {
-                row.get(3)?
-            };
+            dbg!(&名称及规格);
+            let 数量: String = row.get(1)?;
+            dbg!(&数量);
+            let 数量 = 数量.parse::<f64>().unwrap_or_default();
+            let 人工碳排放: f64 = row.get(2)?;
+            let 材料碳排放: f64 = row.get(3)?;
+            let 机械碳排放: f64 = row.get(4)?;
+
+            let row_total = (人工碳排放 + 材料碳排放 + 机械碳排放) * 数量;
 
             Ok(ResultRow {
                 序号: String::new(),
                 项目名称: 名称及规格,
-                单位: String::new(),
+                单位: "m2".to_string(),
                 可研估算: String::new(),
                 碳排放指数: String::new(),
-                人工: format!("{:.4}", 人工碳排放),
-                材料: format!("{:.4}", 材料碳排放),
-                机械: format!("{:.4}", 机械碳排放),
-                小计: String::new(),
+                人工: format!("{:.4}", 人工碳排放 * 数量),
+                材料: format!("{:.4}", 材料碳排放 * 数量),
+                机械: format!("{:.4}", 机械碳排放 * 数量),
+                小计: format!("{:.4}", row_total),
             })
         })?;
 
+        let mut index = 1;
+        self.rows.push(ResultRow {
+            序号: "一".to_string(),
+            项目名称: project_type.to_owned(),
+            单位: "m2".to_string(),
+            ..Default::default()
+            // 可研估算: String::new(),
+            // 碳排放指数: String::new(),
+            // 人工: format!("{:.4}", 人工碳排放),
+            // 材料: format!("{:.4}", 材料碳排放),
+            // 机械: format!("{:.4}", 机械碳排放),
+            // 小计: String::new(),
+        });
+
+        self.rows.push(ResultRow {
+            序号: index.to_string(),
+            项目名称: road_type.to_owned(),
+            单位: "m2".to_string(),
+            // 小计: format!("{:.4}", total),
+            ..Default::default()
+            // 可研估算: String::new(),
+            // 碳排放指数: String::new(),
+            // 人工: format!("{:.4}", 人工碳排放),
+            // 材料: format!("{:.4}", 材料碳排放),
+            // 机械: format!("{:.4}", 机械碳排放),
+            // 小计: String::new(),
+        });
+
+        index += 1;
+        let mut total = 0.0f64;
         for row in rows {
-            if let Ok(row) = row {
+            if let Ok(mut row) = row {
+                dbg!(&row);
+                row.序号 = index.to_string();
+                total += row.小计.parse::<f64>().unwrap();
                 self.rows.push(row);
+                index += 1;
             }
         }
+        self.rows[1].小计 = format!("{:.4}", total);
 
         Ok(())
     }
@@ -1351,8 +1435,12 @@ impl CarbonResultPanel {
                                 cx,
                             );
                         }
-                        
-                        if let Err(e) = table.delegate_mut().update_data(&project_type, &road_type, &db_path) {
+
+                        if let Err(e) =
+                            table
+                                .delegate_mut()
+                                .update_data(&project_type, &road_type, &db_path)
+                        {
                             window.push_notification(
                                 Notification::new(format!("更新数据失败: {}", e))
                                     .with_type(NotificationType::Error),
@@ -1409,4 +1497,3 @@ fn main() {
         story::create_new_window("碳排放计算程序", ExcelStory::new_view, cx);
     });
 }
-

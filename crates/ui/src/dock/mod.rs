@@ -329,6 +329,24 @@ impl DockItem {
         }
     }
 
+    /// Find existing panel in the dock item.
+    pub fn find_panel_by_name(&self, panel_name: &str, cx: &App) -> Option<Arc<dyn PanelView>> {
+        match self {
+            Self::Split { items, .. } => {
+                items.iter().find_map(|item| item.find_panel_by_name(panel_name, cx))
+            }
+            Self::Tabs { items, .. } => items.iter().find(|item| item.panel_name(cx) == panel_name).cloned(),
+            Self::Panel { view } => Some(view.clone()),
+            Self::Tiles { items, .. } => items.iter().find_map(|item| {
+                if item.panel.panel_name(cx) == panel_name {
+                    Some(item.panel.clone())
+                } else {
+                    None
+                }
+            }),
+        }
+    }
+
     /// Add a panel to the dock item.
     pub fn add_panel(
         &mut self,
