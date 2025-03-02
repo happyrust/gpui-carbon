@@ -14,7 +14,7 @@ use gpui_component::{
     label::Label,
     notification::{Notification, NotificationType},
     popup_menu::PopupMenuExt,
-    table::{self, Table, TableDelegate},
+    table::{self, Table, TableDelegate, TableEvent},
     v_flex, ContextModal, Sizable,
 };
 use rusqlite::{params, Connection, Result as SqliteResult};
@@ -1193,7 +1193,8 @@ impl Render for InputeTablePanel {
 
 #[derive(Clone)]
 struct ResultTableDelegate {
-    rows: Vec<ResultRow>,
+    total_rows: Vec<ResultRow>,
+    sub_rows: Vec<ResultRow>,
     columns: Vec<String>,
 }
 
@@ -1225,7 +1226,8 @@ impl ResultTableDelegate {
         ];
 
         Self {
-            rows: vec![],
+            total_rows: vec![],
+            sub_rows: vec![],
             columns,
         }
     }
@@ -1237,7 +1239,8 @@ impl ResultTableDelegate {
         db_path: &str,
     ) -> SqliteResult<()> {
         // 清空现有数据
-        self.rows.clear();
+        self.total_rows.clear();
+        self.sub_rows.clear();
 
         // 如果工程类型或道路类型为空，直接返回
         if project_type.is_empty() || road_type.is_empty() {
@@ -1275,9 +1278,7 @@ impl ResultTableDelegate {
 
         let mut rows = stmt.query_map([sheet_id], |row| {
             let 名称及规格: String = row.get(0)?;
-            dbg!(&名称及规格);
             let 数量: String = row.get(1)?;
-            dbg!(&数量);
             let 数量 = 数量.parse::<f64>().unwrap_or_default();
             let 人工碳排放: f64 = row.get(2)?;
             let 材料碳排放: f64 = row.get(3)?;
@@ -1299,51 +1300,278 @@ impl ResultTableDelegate {
         })?;
 
         let mut index = 1;
-        self.rows.push(ResultRow {
+        self.total_rows.push(ResultRow {
             序号: "一".to_string(),
             项目名称: project_type.to_owned(),
             单位: "m2".to_string(),
             ..Default::default()
-            // 可研估算: String::new(),
-            // 碳排放指数: String::new(),
-            // 人工: format!("{:.4}", 人工碳排放),
-            // 材料: format!("{:.4}", 材料碳排放),
-            // 机械: format!("{:.4}", 机械碳排放),
-            // 小计: String::new(),
         });
 
-        self.rows.push(ResultRow {
+        self.total_rows.push(ResultRow {
             序号: index.to_string(),
             项目名称: road_type.to_owned(),
             单位: "m2".to_string(),
-            // 小计: format!("{:.4}", total),
             ..Default::default()
-            // 可研估算: String::new(),
-            // 碳排放指数: String::new(),
-            // 人工: format!("{:.4}", 人工碳排放),
-            // 材料: format!("{:.4}", 材料碳排放),
-            // 机械: format!("{:.4}", 机械碳排放),
-            // 小计: String::new(),
         });
 
         index += 1;
         let mut total = 0.0f64;
         for row in rows {
             if let Ok(mut row) = row {
-                dbg!(&row);
                 row.序号 = index.to_string();
                 total += row.小计.parse::<f64>().unwrap();
-                self.rows.push(row);
+                self.sub_rows.push(row.clone());
                 index += 1;
             }
         }
-        self.rows[1].小计 = format!("{:.4}", total);
+        self.total_rows[1].小计 = format!("{:.4}", total);
 
         Ok(())
     }
 }
 
 impl TableDelegate for ResultTableDelegate {
+    fn cols_count(&self, _: &App) -> usize {
+        self.columns.len()
+    }
+
+    fn rows_count(&self, _: &App) -> usize {
+        self.total_rows.len()
+    }
+
+    fn col_name(&self, col_ix: usize, _: &App) -> SharedString {
+        self.columns[col_ix].clone().into()
+    }
+
+    fn col_width(&self, _: usize, _: &App) -> Pixels {
+        120.0.into()
+    }
+
+    fn col_padding(&self, _: usize, _: &App) -> Option<Edges<Pixels>> {
+        Some(Edges::all(px(4.)))
+    }
+
+    fn render_th(
+        &self,
+        col_ix: usize,
+        _: &mut Window,
+        cx: &mut Context<Table<Self>>,
+    ) -> impl IntoElement {
+        div().child(self.col_name(col_ix, cx))
+    }
+
+    fn render_td(
+        &self,
+        row_ix: usize,
+        col_ix: usize,
+        _: &mut Window,
+        _: &mut Context<Table<Self>>,
+    ) -> impl IntoElement {
+        let row = &self.total_rows[row_ix];
+        let value = match col_ix {
+            0 => row.序号.clone(),
+            1 => row.项目名称.clone(),
+            2 => row.单位.clone(),
+            3 => row.可研估算.clone(),
+            4 => row.碳排放指数.clone(),
+            5 => row.人工.clone(),
+            6 => row.材料.clone(),
+            7 => row.机械.clone(),
+            8 => row.小计.clone(),
+            _ => String::new(),
+        };
+
+        div().child(value)
+    }
+}
+
+struct CarbonResultPanel {
+    table: Entity<Table<ResultTableDelegate>>,
+    focus_handle: FocusHandle,
+    story: Entity<ExcelStory>,
+    _subscriptions: Vec<Subscription>,
+    sub_items_panel: Option<Entity<SubItemsPanel>>,
+}
+
+impl CarbonResultPanel {
+    pub fn view(
+        story: Entity<ExcelStory>,
+        window: &mut Window,
+        cx: &mut Context<DockArea>,
+    ) -> Entity<Self> {
+        let delegate = ResultTableDelegate::new();
+        let table = cx.new(|cx| Table::new(delegate, window, cx));
+
+        let view = cx.new(|cx| {
+            let table_clone = table.clone();
+            let subscription = cx.subscribe_in(
+                &story,
+                window,
+                move |this: &mut CarbonResultPanel, story: &Entity<ExcelStory>, _: &UpdateResultTable, window: &mut Window, cx: &mut Context<CarbonResultPanel>| {
+                    let story_data = story.read(cx);
+                    let project_type = story_data.project_type.clone();
+                    let road_type = story_data.road_type.clone();
+                    dbg!(&project_type, &road_type);
+                    let db_path = story_data.db_path.clone();
+                    drop(story_data);
+
+                    table_clone.update(cx, |table, cx| {
+                        if project_type.is_empty() || road_type.is_empty() {
+                            window.push_notification(
+                                Notification::new("请先选择工程类型和道路类型")
+                                    .with_type(NotificationType::Warning),
+                                cx,
+                            );
+                        }
+
+                        if let Err(e) =
+                            table
+                                .delegate_mut()
+                                .update_data(&project_type, &road_type, &db_path)
+                        {
+                            window.push_notification(
+                                Notification::new(format!("更新数据失败: {}", e))
+                                    .with_type(NotificationType::Error),
+                                cx,
+                            );
+                        }
+                        table.refresh(cx);
+                    });
+                },
+            );
+
+            let mut panel = Self {
+                table: table.clone(),
+                focus_handle: cx.focus_handle(),
+                story: story.clone(),
+                _subscriptions: vec![subscription],
+                sub_items_panel: None,
+            };
+
+            // Subscribe to table selection changes
+            let table_subscription = cx.subscribe_in(&table, window, {
+                let story = story.clone();
+                move |this: &mut CarbonResultPanel, _table, event: &TableEvent, window: &mut Window, cx: &mut Context<CarbonResultPanel>| {
+                    if let TableEvent::SelectRow(row_ix) = event {
+                        if *row_ix == 1 {  // 当选中第二行时
+                            let story_data = story.read(cx);
+                            let dock_area = story_data.dock_area.clone();
+                            drop(story_data);
+
+                            // Create sub items panel if not exists
+                            if this.sub_items_panel.is_none() {
+                                // Create sub items panel
+                                let delegate = SubItemsTableDelegate::new();
+                                let table = cx.new(|cx| Table::new(delegate, window, cx));
+                                let sub_items_panel = cx.new(|cx| SubItemsPanel {
+                                    table,
+                                    focus_handle: cx.focus_handle(),
+                                });
+                                
+                                // Set sub rows data
+                                let table_data = this.table.read(cx).delegate().clone();
+                                sub_items_panel.update(cx, |panel, cx| {
+                                    panel.table.update(cx, |table, cx| {
+                                        table.delegate_mut().set_rows(table_data.sub_rows.clone());
+                                        table.refresh(cx);
+                                    });
+                                });
+
+                                // Add panel to dock area
+                                let panel_item = DockItem::tab(
+                                    sub_items_panel.clone(),
+                                    &Entity::downgrade(&dock_area),
+                                    window,
+                                    cx,
+                                );
+                                dock_area.update(cx, |dock_area, cx| {
+                                    dock_area.set_right_dock(panel_item, Some(px(600.)), true, window, cx);
+                                });
+
+                                this.sub_items_panel = Some(sub_items_panel);
+                            } else if let Some(panel) = &this.sub_items_panel {
+                                // Update existing panel data
+                                let table_data = this.table.read(cx).delegate().clone();
+                                panel.update(cx, |panel, cx| {
+                                    panel.table.update(cx, |table, cx| {
+                                        table.delegate_mut().set_rows(table_data.sub_rows.clone());
+                                        table.refresh(cx);
+                                    });
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+
+            panel._subscriptions.push(table_subscription);
+            panel
+        });
+
+        view
+    }
+}
+
+impl EventEmitter<PanelEvent> for CarbonResultPanel {}
+
+impl Panel for CarbonResultPanel {
+    fn panel_name(&self) -> &'static str {
+        "ResultPanel"
+    }
+
+    fn title(&self, _window: &Window, _cx: &App) -> gpui::AnyElement {
+        "计算结果".into_any_element()
+    }
+}
+
+impl Focusable for CarbonResultPanel {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for CarbonResultPanel {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().child(self.table.clone())
+    }
+}
+
+struct SubItemsPanel {
+    table: Entity<Table<SubItemsTableDelegate>>,
+    focus_handle: FocusHandle,
+}
+
+struct SubItemsTableDelegate {
+    rows: Vec<ResultRow>,
+    columns: Vec<String>,
+}
+
+impl SubItemsTableDelegate {
+    fn new() -> Self {
+        let columns = vec![
+            "序号".to_string(),
+            "项目名称".to_string(),
+            "单位".to_string(),
+            "可研估算".to_string(),
+            "碳排放指数".to_string(),
+            "人工".to_string(),
+            "材料".to_string(),
+            "机械".to_string(),
+            "小计".to_string(),
+        ];
+
+        Self {
+            rows: Vec::new(),
+            columns,
+        }
+    }
+
+    fn set_rows(&mut self, rows: Vec<ResultRow>) {
+        self.rows = rows;
+    }
+}
+
+impl TableDelegate for SubItemsTableDelegate {
     fn cols_count(&self, _: &App) -> usize {
         self.columns.len()
     }
@@ -1398,91 +1626,37 @@ impl TableDelegate for ResultTableDelegate {
     }
 }
 
-struct CarbonResultPanel {
-    table: Entity<Table<ResultTableDelegate>>,
-    focus_handle: FocusHandle,
-    story: Entity<ExcelStory>,
-    _subscriptions: Vec<Subscription>,
-}
-
-impl CarbonResultPanel {
-    pub fn view(
-        story: Entity<ExcelStory>,
-        window: &mut Window,
-        cx: &mut Context<DockArea>,
-    ) -> Entity<Self> {
-        let delegate = ResultTableDelegate::new();
+impl SubItemsPanel {
+    pub fn view(window: &mut Window, cx: &mut Context<DockArea>) -> Entity<Self> {
+        let delegate = SubItemsTableDelegate::new();
         let table = cx.new(|cx| Table::new(delegate, window, cx));
 
-        let view = cx.new(|cx| {
-            let table_clone = table.clone();
-            let subscription = cx.subscribe_in(
-                &story,
-                window,
-                move |_this, story, _: &UpdateResultTable, window, cx| {
-                    let story_data = story.read(cx);
-                    let project_type = story_data.project_type.clone();
-                    let road_type = story_data.road_type.clone();
-                    dbg!(&project_type, &road_type);
-                    let db_path = story_data.db_path.clone();
-                    drop(story_data);
-
-                    table_clone.update(cx, |table, cx| {
-                        if project_type.is_empty() || road_type.is_empty() {
-                            window.push_notification(
-                                Notification::new("请先选择工程类型和道路类型")
-                                    .with_type(NotificationType::Warning),
-                                cx,
-                            );
-                        }
-
-                        if let Err(e) =
-                            table
-                                .delegate_mut()
-                                .update_data(&project_type, &road_type, &db_path)
-                        {
-                            window.push_notification(
-                                Notification::new(format!("更新数据失败: {}", e))
-                                    .with_type(NotificationType::Error),
-                                cx,
-                            );
-                        }
-                        table.refresh(cx);
-                    });
-                },
-            );
-
-            Self {
-                table,
-                focus_handle: cx.focus_handle(),
-                story: story.clone(),
-                _subscriptions: vec![subscription],
-            }
-        });
-
-        view
+        cx.new(|cx| Self {
+            table,
+            focus_handle: cx.focus_handle(),
+        })
     }
 }
 
-impl EventEmitter<PanelEvent> for CarbonResultPanel {}
+impl EventEmitter<PanelEvent> for SubItemsPanel {}
 
-impl Panel for CarbonResultPanel {
+impl Panel for SubItemsPanel {
     fn panel_name(&self) -> &'static str {
-        "ResultPanel"
+        "SubItemsPanel"
     }
 
     fn title(&self, _window: &Window, _cx: &App) -> gpui::AnyElement {
-        "计算结果".into_any_element()
+        "子项目明细".into_any_element()
     }
 }
 
-impl Focusable for CarbonResultPanel {
+impl Focusable for SubItemsPanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for CarbonResultPanel {
+impl Render for SubItemsPanel {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div().size_full().child(self.table.clone())
     }
