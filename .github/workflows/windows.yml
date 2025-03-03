@@ -5,6 +5,9 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * *'  # 每天 UTC 0:00 运行
+  workflow_dispatch:  # 允许手动触发
 
 env:
   CARGO_TERM_COLOR: always
@@ -48,15 +51,53 @@ jobs:
         copy target/release/*.dll release/ || true
         copy assets release/assets/ /E /I || true
         
+    - name: Generate current date
+      id: date
+      run: echo "date=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+      shell: bash
+        
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: excel-table-windows
+        name: excel-table-windows-${{ steps.date.outputs.date }}
         path: release/
+
+    - name: Delete old nightly release
+      uses: dev-drprasad/delete-tag-and-release@v1.0
+      if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      with:
+        tag_name: nightly
+        delete_release: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create Nightly Release
+      uses: softprops/action-gh-release@v1
+      if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      with:
+        name: Nightly Build (${{ steps.date.outputs.date }})
+        tag_name: nightly
+        prerelease: true
+        files: release/*
+        body: |
+          This is an automated nightly build of the Excel Table application.
+          
+          Build Date: ${{ steps.date.outputs.date }}
+          Commit: ${{ github.sha }}
+          
+          ### 下载说明
+          1. 下载并解压 zip 文件
+          2. 运行 excel_table.exe
+          
+          ### 注意事项
+          - 这是自动构建的开发版本，可能包含不稳定特性
+          - 如需稳定版本，请使用正式发布的版本
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Release
       uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
+      if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'nightly')
       with:
         files: release/*
       env:
