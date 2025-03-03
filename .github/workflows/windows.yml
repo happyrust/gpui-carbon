@@ -12,6 +12,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-C target-feature=+crt-static"
+  RUSTUP_TOOLCHAIN: nightly
 
 jobs:
   build:
@@ -42,7 +43,7 @@ jobs:
           ${{ runner.os }}-cargo-nightly-
           
     - name: Build excel_table example
-      run: cargo +nightly build --release --example excel_table
+      run: cargo build --release --example excel_table
       
     - name: Create Release Folder
       run: |

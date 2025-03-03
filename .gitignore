@@ -3,3 +3,4 @@
 /layout.json
 .vscode
 index.scip
+./.cargo/config.toml
