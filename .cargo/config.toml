@@ -1,11 +1,11 @@
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "link-arg=/STACK:8000000"]
 
-[unstable]
-  codegen-backend = true
+#[unstable]
+#  codegen-backend = true
+#
+#[profile.dev]
+#  codegen-backend = "cranelift"
 
-[profile.dev]
-  codegen-backend = "cranelift"
-
-[profile.dev.package."*"]
-  codegen-backend = "llvm"
+#[profile.dev.package."*"]
+#  codegen-backend = "llvm"
