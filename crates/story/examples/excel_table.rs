@@ -27,6 +27,43 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use story::{Assets, Story};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Category {
+    Labor,    // 人工
+    Material, // 材料
+    Machine,  // 机械
+    None,     // 未分类
+}
+
+impl Default for Category {
+    fn default() -> Self {
+        Category::None
+    }
+}
+
+impl Category {
+    fn from_title(title: &str) -> Option<Self> {
+        if title.contains("人工类别") {
+            Some(Category::Labor)
+        } else if title.contains("材料类别") {
+            Some(Category::Material)
+        } else if title.contains("机械类别") {
+            Some(Category::Machine)
+        } else {
+            None
+        }
+    }
+
+    fn prefix(&self) -> &'static str {
+        match self {
+            Category::Labor => "L",
+            Category::Material => "M",
+            Category::Machine => "E",
+            Category::None => "",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ExcelRow {
     id: usize,
@@ -569,7 +606,6 @@ impl ExcelStory {
                         // Start transaction
                         let tx = conn.transaction().unwrap();
 
-                        // Don't clear all data, we'll handle updates per sheet
                         let mut success = false;
 
                         for sheet_name in &sheet_names {
@@ -592,34 +628,28 @@ impl ExcelStory {
                                             header_columns.values().any(|col| col == required_col)
                                         })
                                     }) {
-                                        // Check if sheet exists and get its ID
-                                        let sheet_id: Option<i64> = tx
-                                            .query_row(
-                                                "SELECT id FROM sheets WHERE name = ?",
-                                                params![sheet_name],
-                                                |row| row.get(0),
-                                            )
-                                            .ok();
-
-                                        // If sheet exists, delete its data
-                                        // if let Some(id) = sheet_id {
-                                        //     tx.execute(
-                                        //         "DELETE FROM excel_data WHERE sheet_id = ?",
-                                        //         params![id],
-                                        //     )
-                                        //     .unwrap();
-                                        //     tx.execute(
-                                        //         "DELETE FROM sheets WHERE id = ?",
-                                        //         params![id],
-                                        //     )
-                                        //     .unwrap();
-                                        // }
+                                        // Delete existing sheet data
+                                        if let Ok(sheet_id) = tx.query_row(
+                                            "SELECT id FROM sheets WHERE name = ?",
+                                            params![sheet_name],
+                                            |row| row.get::<_, i64>(0)
+                                        ) {
+                                            dbg!("Deleting existing data for sheet:", sheet_name);
+                                            tx.execute(
+                                                "DELETE FROM excel_data WHERE sheet_id = ?",
+                                                params![sheet_id],
+                                            )?;
+                                            tx.execute(
+                                                "DELETE FROM sheets WHERE id = ?",
+                                                params![sheet_id],
+                                            )?;
+                                        }
 
                                         // Insert or update sheet
                                         tx.execute(
                                             "INSERT INTO sheets (name) VALUES (?)",
                                             params![sheet_name],
-                                        );
+                                        )?;
                                         let sheet_id = tx.last_insert_rowid();
 
                                         // Create column mapping
@@ -630,10 +660,30 @@ impl ExcelStory {
                                             }
                                         }
 
+                                        // Track current category and counts
+                                        let mut current_category = Category::None;
+                                        let mut category_counts = HashMap::new();
+                                        category_counts.insert(Category::Labor, 0);
+                                        category_counts.insert(Category::Material, 0);
+                                        category_counts.insert(Category::Machine, 0);
+                                        category_counts.insert(Category::None, 0);
+
+                                        dbg!("Starting to process rows for sheet:", sheet_name);
+
                                         // Insert data
                                         for row in rows.iter().skip(header_idx + 1) {
                                             let mut row_data = HashMap::new();
                                             let mut valid_columns = 0;
+
+                                            // Check if this row is a category header
+                                            if let Some(first_cell) = row.get(0) {
+                                                let cell_value = first_cell.to_string().trim().to_string();
+                                                if let Some(category) = Category::from_title(&cell_value) {
+                                                    current_category = category;
+                                                    dbg!("Found category header:", &cell_value, "Setting current_category to:", &current_category);
+                                                    continue; // Skip category header row
+                                                }
+                                            }
 
                                             for required_col in &self.required_columns {
                                                 if let Some(col_idx) = column_mapping
@@ -642,13 +692,9 @@ impl ExcelStory {
                                                     .map(|(&idx, _)| idx)
                                                 {
                                                     if let Some(cell) = row.get(col_idx) {
-                                                        let cell_value =
-                                                            cell.to_string().trim().to_string();
+                                                        let cell_value = cell.to_string().trim().to_string();
                                                         if !cell_value.is_empty() {
-                                                            row_data.insert(
-                                                                required_col.clone(),
-                                                                cell_value,
-                                                            );
+                                                            row_data.insert(required_col.clone(), cell_value);
                                                             valid_columns += 1;
                                                         }
                                                     }
@@ -656,6 +702,24 @@ impl ExcelStory {
                                             }
 
                                             if valid_columns > 0 {
+                                                // Modify 编码 based on category if it doesn't already have a prefix
+                                                if let Some(code) = row_data.get_mut("编码") {
+                                                    if !code.starts_with('L') && !code.starts_with('M') && !code.starts_with('E') {
+                                                        *code = format!("{}{}", current_category.prefix(), code);
+                                                        dbg!("Added prefix to code:", code, "Category:", &current_category);
+                                                    }
+                                                    // Update category count
+                                                    if code.starts_with('L') {
+                                                        *category_counts.get_mut(&Category::Labor).unwrap() += 1;
+                                                    } else if code.starts_with('M') {
+                                                        *category_counts.get_mut(&Category::Material).unwrap() += 1;
+                                                    } else if code.starts_with('E') {
+                                                        *category_counts.get_mut(&Category::Machine).unwrap() += 1;
+                                                    } else {
+                                                        *category_counts.get_mut(&Category::None).unwrap() += 1;
+                                                    }
+                                                }
+
                                                 tx.execute(
                                                     "INSERT INTO excel_data (
                                                         sheet_id, 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计
@@ -670,9 +734,17 @@ impl ExcelStory {
                                                         row_data.get("市场价").unwrap_or(&String::new()),
                                                         row_data.get("合计").unwrap_or(&String::new()),
                                                     ],
-                                                ).unwrap();
+                                                )?;
                                             }
                                         }
+
+                                        // Print category statistics
+                                        dbg!("Category counts for sheet:", sheet_name);
+                                        dbg!("Labor items:", category_counts[&Category::Labor]);
+                                        dbg!("Material items:", category_counts[&Category::Material]);
+                                        dbg!("Machine items:", category_counts[&Category::Machine]);
+                                        dbg!("Uncategorized items:", category_counts[&Category::None]);
+
                                         success = true;
                                     }
                                 }
@@ -692,7 +764,6 @@ impl ExcelStory {
                                 .map(|r| r.unwrap())
                                 .collect();
 
-                            // self.project_type
                             // Update dropdowns with new project and road types
                             self.update_types_ui(window, cx);
 
@@ -1206,10 +1277,22 @@ struct ResultRow {
     小计: String,
 }
 
+#[derive(Clone, Default, Debug)]
+struct SubItemRow {
+    序号: String,
+    编码: String,
+    名称及规格: String,
+    单位: String,
+    数量: String,
+    市场价: String,
+    合计: String,
+    category: Category,  // 添加类别字段
+}
+
 #[derive(Clone)]
 struct ResultTableDelegate {
     total_rows: Vec<ResultRow>,
-    sub_rows: Vec<ResultRow>,
+    sub_rows: Vec<SubItemRow>,
     columns: Vec<String>,
 }
 
@@ -1244,36 +1327,78 @@ impl ResultTableDelegate {
         self.total_rows.clear();
         self.sub_rows.clear();
 
+        // 收集所有子项目数据
+        let mut total_labor = 0.0;
+        let mut total_material = 0.0;
+        let mut total_machine = 0.0;
+        let mut total_research = 0.0;
+
+        dbg!("Updating data for", project_type, road_type);
+
         // 如果工程类型或道路类型为空，直接返回
         if project_type.is_empty() || road_type.is_empty() {
             return Ok(());
         }
 
         let conn = Connection::open(db_path)?;
-        let sheet_name = format!("{project_type} {road_type}");
 
         let sheet_id = if project_type == "道路工程" { 1 } else { 2 };
+        dbg!("Using sheet_id:", sheet_id);
+
+        // 首先检查数据库中的数据
+        let mut check_stmt = conn.prepare(
+            "SELECT 编码, 名称及规格 FROM excel_data WHERE sheet_id = ? LIMIT 5"
+        )?;
+        let check_rows = check_stmt.query_map([sheet_id], |row| {
+            let code: String = row.get(0)?;
+            let name: String = row.get(1)?;
+            Ok((code, name))
+        })?;
+        
+        dbg!("Checking first 5 rows in database:");
+        for row in check_rows {
+            if let Ok((code, name)) = row {
+                dbg!("DB row:", &code, &name);
+            }
+        }
 
         // 查询所有数据，包括碳排放因子
         let mut stmt = conn.prepare(
             "
-            SELECT DISTINCT 
-                e.序号,
-                e.编码,
-                e.名称及规格,
-                e.单位,
-                e.数量,
-                COALESCE(l.carbon_factor, 1) as labor_factor,
-                COALESCE(m.carbon_factor, 1) as material_factor,
-                COALESCE(mc.carbon_factor, 1) as machine_factor
-             FROM excel_data e
-             LEFT JOIN labor l ON e.编码 = l.code
-             LEFT JOIN material m ON e.编码 = m.code
-             LEFT JOIN machine mc ON e.编码 = mc.code
-             WHERE e.sheet_id = :sheet_id
-             AND e.编码 IS NOT NULL
-             AND e.编码 != ''
-             ORDER BY e.id;
+            WITH combined_factors AS (
+                SELECT 
+                    e.序号,
+                    e.编码,
+                    e.名称及规格,
+                    e.单位,
+                    e.数量,
+                    e.市场价,
+                    e.合计,
+                    CASE 
+                        WHEN e.编码 LIKE 'L%' THEN l.carbon_factor
+                        WHEN e.编码 LIKE 'M%' THEN m.carbon_factor
+                        WHEN e.编码 LIKE 'E%' THEN mc.carbon_factor
+                        ELSE 1
+                    END as carbon_factor
+                FROM excel_data e
+                LEFT JOIN labor l ON e.编码 = l.code
+                LEFT JOIN material m ON e.编码 = m.code
+                LEFT JOIN machine mc ON e.编码 = mc.code
+                WHERE e.sheet_id = :sheet_id
+                AND e.编码 IS NOT NULL
+                AND e.编码 != ''
+            )
+            SELECT 
+                序号,
+                编码,
+                名称及规格,
+                单位,
+                数量,
+                市场价,
+                合计,
+                carbon_factor
+            FROM combined_factors
+            ORDER BY 编码;
             ",
         )?;
 
@@ -1283,32 +1408,83 @@ impl ResultTableDelegate {
             let 名称及规格: String = row.get(2)?;
             let 单位: String = row.get(3)?;
             let 数量: String = row.get(4)?;
-            let 数量_float = 数量.parse::<f64>().unwrap_or(0.0);
+            let 市场价: String = row.get(5)?;
+            let 合计: String = row.get(6)?;
+            let carbon_factor: f64 = row.get(7)?;
 
-            let labor_factor: f64 = row.get(5)?;
-            let material_factor: f64 = row.get(6)?;
-            let machine_factor: f64 = row.get(7)?;
+            dbg!("Processing row:", &编码, &名称及规格);
+
+            // 确定类别
+            let category = if 编码.starts_with('L') {
+                dbg!("Found Labor item:", &编码);
+                Category::Labor
+            } else if 编码.starts_with('M') {
+                dbg!("Found Material item:", &编码);
+                Category::Material
+            } else if 编码.starts_with('E') {
+                dbg!("Found Machine item:", &编码);
+                Category::Machine
+            } else {
+                dbg!("Found uncategorized item:", &编码);
+                Category::None
+            };
 
             // 计算碳排放量
-            let labor_emission = labor_factor * 数量_float;
-            let material_emission = material_factor * 数量_float;
-            let machine_emission = machine_factor * 数量_float;
-            let total_emission = labor_emission + material_emission + machine_emission;
+            let emission = carbon_factor * 数量.parse::<f64>().unwrap_or(0.0);
 
-            Ok(ResultRow {
-                序号,
+            // 创建主表行数据
+            let row = ResultRow {
+                序号: 序号.clone(),
                 编码: 编码.clone(),
                 名称及规格: 名称及规格.clone(),
                 项目名称: format!("{} {}", 编码, 名称及规格),
+                单位: 单位.clone(),
+                可研估算: 数量.clone(),
+                碳排放指数: format!("{:.2}", emission / 数量.parse::<f64>().unwrap_or(0.0)),
+                人工: format!("{:.4}", if matches!(category, Category::Labor) { emission } else { 0.0 }),
+                材料: format!("{:.4}", if matches!(category, Category::Material) { emission } else { 0.0 }),
+                机械: format!("{:.4}", if matches!(category, Category::Machine) { emission } else { 0.0 }),
+                小计: format!("{:.4}", emission),
+            };
+
+            // 创建子项行
+            let sub_row = SubItemRow {
+                序号,
+                编码,
+                名称及规格,
                 单位,
-                可研估算: 数量,
-                碳排放指数: format!("{:.2}", total_emission / 数量_float),
-                人工: format!("{:.4}", labor_emission),
-                材料: format!("{:.4}", material_emission),
-                机械: format!("{:.4}", machine_emission),
-                小计: format!("{:.4}", total_emission),
-            })
+                数量,
+                市场价,
+                合计,
+                category,
+            };
+
+            Ok((row, sub_row))
         })?;
+
+        // 保存子项目数据
+        for row_result in rows {
+            if let Ok((row, sub_row)) = row_result {
+                dbg!("Adding sub row with category:", &sub_row.category, &sub_row.编码);
+                self.sub_rows.push(sub_row.clone());
+                
+                // 累加各项数据
+                if let Ok(labor) = row.人工.parse::<f64>() {
+                    total_labor += labor;
+                }
+                if let Ok(material) = row.材料.parse::<f64>() {
+                    total_material += material;
+                }
+                if let Ok(machine) = row.机械.parse::<f64>() {
+                    total_machine += machine;
+                }
+                if let Ok(research) = row.可研估算.parse::<f64>() {
+                    total_research += research;
+                }
+            }
+        }
+
+        dbg!("Total sub rows before categorization:", self.sub_rows.len());
 
         // 添加工程类型行
         self.total_rows.push(ResultRow {
@@ -1326,60 +1502,20 @@ impl ResultTableDelegate {
         });
 
         // 添加道路类型行
-        let mut total_labor = 0.0;
-        let mut total_material = 0.0;
-        let mut total_machine = 0.0;
-        let mut total_emission = 0.0;
-        let mut total_research = 0.0;
-
-        // 从road_type中提取数值和单位
-        let parts: Vec<&str> = road_type.split_whitespace().collect();
-        let road_name = road_type.to_string();
-        let unit_str = "m2".to_string();
-
+        let total_emission = total_labor + total_material + total_machine;
         self.total_rows.push(ResultRow {
             序号: "1".to_string(),
             编码: "".to_string(),
-            名称及规格: road_name.clone(),
-            项目名称: road_name,
-            单位: unit_str,
-            可研估算: "1020".to_string(), // 从图中看到的示例值
-            碳排放指数: "".to_string(),
-            人工: "0.1116".to_string(),
-            材料: "22.1072".to_string(),
-            机械: "0.3997".to_string(),
-            小计: "22.6185".to_string(),
+            名称及规格: road_type.to_string(),
+            项目名称: road_type.to_string(),
+            单位: "m2".to_string(),
+            可研估算: format!("{:.2}", total_research),
+            碳排放指数: format!("{:.2}", if total_research > 0.0 { total_emission / total_research } else { 0.0 }),
+            人工: format!("{:.4}", total_labor),
+            材料: format!("{:.4}", total_material),
+            机械: format!("{:.4}", total_machine),
+            小计: format!("{:.4}", total_emission),
         });
-
-        // 保存子项目数据
-        for row in rows {
-            if let Ok(row) = row {
-                // 累加各项数据
-                if let Ok(labor) = row.人工.parse::<f64>() {
-                    total_labor += labor;
-                }
-                if let Ok(material) = row.材料.parse::<f64>() {
-                    total_material += material;
-                }
-                if let Ok(machine) = row.机械.parse::<f64>() {
-                    total_machine += machine;
-                }
-                if let Ok(research) = row.可研估算.parse::<f64>() {
-                    total_research += research;
-                }
-                self.sub_rows.push(row);
-            }
-        }
-
-        // 更新道路类型行的合计数据
-        if let Some(road_row) = self.total_rows.get_mut(1) {
-            total_emission = total_labor + total_material + total_machine;
-            road_row.碳排放指数 = format!("{:.2}", total_emission / total_research);
-            road_row.人工 = format!("{:.4}", total_labor);
-            road_row.材料 = format!("{:.4}", total_material);
-            road_row.机械 = format!("{:.4}", total_machine);
-            road_row.小计 = format!("{:.4}", total_emission);
-        }
 
         Ok(())
     }
@@ -1470,7 +1606,7 @@ impl CarbonResultPanel {
                     let story_data = story.read(cx);
                     let project_type = story_data.project_type.clone();
                     let road_type = story_data.road_type.clone();
-                    dbg!(&project_type, &road_type);
+                    dbg!("UpdateResultTable event received", &project_type, &road_type);
                     let db_path = story_data.db_path.clone();
                     drop(story_data);
 
@@ -1516,6 +1652,7 @@ impl CarbonResultPanel {
                       window: &mut Window,
                       cx: &mut Context<CarbonResultPanel>| {
                     if let TableEvent::SelectRow(row_ix) = event {
+                        dbg!("Row selected:", row_ix);
                         if *row_ix == 1 {
                             // 当选中第二行时
                             let story_data = story.read(cx);
@@ -1524,6 +1661,7 @@ impl CarbonResultPanel {
 
                             // Create sub items panel if not exists
                             if this.sub_items_panel.is_none() {
+                                dbg!("Creating new sub items panel");
                                 // Create sub items panel
                                 let delegate = SubItemsTableDelegate::new();
                                 let table = cx.new(|cx| Table::new(delegate, window, cx));
@@ -1534,6 +1672,7 @@ impl CarbonResultPanel {
 
                                 // Set sub rows data
                                 let table_data = this.table.read(cx).delegate().clone();
+                                dbg!("Number of sub rows to display:", table_data.sub_rows.len());
                                 sub_items_panel.update(cx, |panel, cx| {
                                     panel.table.update(cx, |table, cx| {
                                         table.delegate_mut().set_rows(table_data.sub_rows.clone());
@@ -1560,8 +1699,10 @@ impl CarbonResultPanel {
 
                                 this.sub_items_panel = Some(sub_items_panel);
                             } else if let Some(panel) = &this.sub_items_panel {
+                                dbg!("Updating existing sub items panel");
                                 // Update existing panel data
                                 let table_data = this.table.read(cx).delegate().clone();
+                                dbg!("Number of sub rows to update:", table_data.sub_rows.len());
                                 panel.update(cx, |panel, cx| {
                                     panel.table.update(cx, |table, cx| {
                                         table.delegate_mut().set_rows(table_data.sub_rows.clone());
@@ -1611,17 +1752,6 @@ struct SubItemsPanel {
     focus_handle: FocusHandle,
 }
 
-#[derive(Clone, Default, Debug)]
-struct SubItemRow {
-    序号: String,
-    编码: String,
-    名称及规格: String,
-    单位: String,
-    数量: String,
-    碳排放因子: String,
-    碳排放量: String,
-}
-
 struct SubItemsTableDelegate {
     rows: Vec<SubItemRow>,
     columns: Vec<String>,
@@ -1635,8 +1765,8 @@ impl SubItemsTableDelegate {
             "名称及规格".to_string(),
             "单位".to_string(),
             "数量".to_string(),
-            "碳排放因子".to_string(),
-            "碳排放量".to_string(),
+            "市场价".to_string(),
+            "合计".to_string(),
         ];
 
         Self {
@@ -1645,38 +1775,99 @@ impl SubItemsTableDelegate {
         }
     }
 
-    fn set_rows(&mut self, result_rows: Vec<ResultRow>) {
-        self.rows = result_rows
-            .into_iter()
-            .map(|row| {
-                let total_emission = if let (Ok(labor), Ok(material), Ok(machine)) = (
-                    row.人工.parse::<f64>(),
-                    row.材料.parse::<f64>(),
-                    row.机械.parse::<f64>(),
-                ) {
-                    labor + material + machine
-                } else {
-                    0.0
-                };
+    fn set_rows(&mut self, result_rows: Vec<SubItemRow>) {
+        dbg!("Setting rows in SubItemsTableDelegate, received rows:", result_rows.len());
+        
+        // 清空现有数据
+        self.rows.clear();
 
-                let amount = row.可研估算.parse::<f64>().unwrap_or(0.0);
-                let factor = if amount > 0.0 {
-                    total_emission / amount
-                } else {
-                    0.0
-                };
+        // 分类存储行
+        let mut labor_rows = Vec::new();
+        let mut material_rows = Vec::new();
+        let mut machine_rows = Vec::new();
 
-                SubItemRow {
-                    序号: row.序号,
-                    编码: row.编码,
-                    名称及规格: row.名称及规格,
-                    单位: row.单位,
-                    数量: row.可研估算,
-                    碳排放因子: format!("{:.4}", factor),
-                    碳排放量: format!("{:.4}", total_emission),
-                }
-            })
-            .collect();
+        // 遍历并分类数据
+        for row in result_rows {
+            match row.category {
+                Category::Labor => labor_rows.push(row),
+                Category::Material => material_rows.push(row),
+                Category::Machine => machine_rows.push(row),
+                Category::None => continue,
+            }
+        }
+
+        dbg!("Categorized rows - Labor:", labor_rows.len(), "Material:", material_rows.len(), "Machine:", machine_rows.len());
+
+        // 添加人工类别标题和数据
+        if !labor_rows.is_empty() {
+            // 添加人工类别标题
+            self.rows.push(SubItemRow {
+                序号: "一".to_string(),
+                编码: "".to_string(),
+                名称及规格: "人工类别".to_string(),
+                单位: "".to_string(),
+                数量: "".to_string(),
+                市场价: "".to_string(),
+                合计: "".to_string(),
+                category: Category::Labor,
+            });
+
+            // 添加人工数据行
+            for (i, mut row) in labor_rows.into_iter().enumerate() {
+                row.序号 = (i + 1).to_string();
+                self.rows.push(row);
+            }
+
+            // 添加空行
+            self.rows.push(SubItemRow::default());
+        }
+
+        // 添加材料类别标题和数据
+        if !material_rows.is_empty() {
+            // 添加材料类别标题
+            self.rows.push(SubItemRow {
+                序号: "三".to_string(),
+                编码: "".to_string(),
+                名称及规格: "材料类别".to_string(),
+                单位: "".to_string(),
+                数量: "".to_string(),
+                市场价: "".to_string(),
+                合计: "".to_string(),
+                category: Category::Material,
+            });
+
+            // 添加材料数据行
+            for (i, mut row) in material_rows.into_iter().enumerate() {
+                row.序号 = (i + 1).to_string();
+                self.rows.push(row);
+            }
+
+            // 添加空行
+            self.rows.push(SubItemRow::default());
+        }
+
+        // 添加机械类别标题和数据
+        if !machine_rows.is_empty() {
+            // 添加机械类别标题
+            self.rows.push(SubItemRow {
+                序号: "四".to_string(),
+                编码: "".to_string(),
+                名称及规格: "机械类别".to_string(),
+                单位: "".to_string(),
+                数量: "".to_string(),
+                市场价: "".to_string(),
+                合计: "".to_string(),
+                category: Category::Machine,
+            });
+
+            // 添加机械数据行
+            for (i, mut row) in machine_rows.into_iter().enumerate() {
+                row.序号 = (i + 1).to_string();
+                self.rows.push(row);
+            }
+        }
+
+        dbg!("Final number of rows in delegate:", self.rows.len());
     }
 }
 
@@ -1760,8 +1951,8 @@ impl TableDelegate for SubItemsTableDelegate {
             2 => row.名称及规格.clone(),
             3 => row.单位.clone(),
             4 => row.数量.clone(),
-            5 => row.碳排放因子.clone(),
-            6 => row.碳排放量.clone(),
+            5 => row.市场价.clone(),
+            6 => row.合计.clone(),
             _ => String::new(),
         };
 
