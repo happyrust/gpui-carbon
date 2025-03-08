@@ -1,21 +1,23 @@
 use crate::scroll::{Scrollbar, ScrollbarState};
-use crate::StyledExt;
 use crate::{
     button::Button, h_flex, list::ListItem, popover::Popover, v_flex, ActiveTheme, Icon, IconName,
     Selectable, Sizable as _,
 };
+use crate::{Kbd, StyledExt};
 use gpui::Subscription;
 use gpui::{
     actions, anchored, canvas, div, prelude::FluentBuilder, px, rems, Action, AnyElement, App,
     AppContext, Bounds, Context, Corner, DismissEvent, Edges, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyBinding, Keystroke, ParentElement, Pixels,
-    Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
+    Focusable, InteractiveElement, IntoElement, KeyBinding, ParentElement, Pixels, Render,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use std::cell::Cell;
 use std::ops::Deref;
 use std::rc::Rc;
 
 actions!(menu, [Confirm, Dismiss, SelectNext, SelectPrev]);
+
+const ITEM_HEIGHT: Pixels = px(26.);
 
 pub fn init(cx: &mut App) {
     let context = Some("PopupMenu");
@@ -107,7 +109,7 @@ pub struct PopupMenu {
     scroll_handle: ScrollHandle,
     scroll_state: Rc<Cell<ScrollbarState>>,
 
-    action_focus_handle: Option<FocusHandle>,
+    previous_focus_handle: Option<FocusHandle>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -128,7 +130,7 @@ impl PopupMenu {
 
             let menu = Self {
                 focus_handle,
-                action_focus_handle: None,
+                previous_focus_handle: window.focused(cx),
                 parent_menu: None,
                 menu_items: Vec::new(),
                 selected_index: None,
@@ -145,12 +147,6 @@ impl PopupMenu {
             };
             f(menu, window, cx)
         })
-    }
-
-    /// Bind the focus handle of the menu, when clicked, it will focus back to this handle and then dispatch the action
-    pub fn track_focus(mut self, focus_handle: &FocusHandle) -> Self {
-        self.action_focus_handle = Some(focus_handle.clone());
-        self
     }
 
     /// Set min width of the popup menu, default is 120px
@@ -255,27 +251,7 @@ impl PopupMenu {
     }
 
     fn wrap_handler(&self, action: Box<dyn Action>) -> Rc<dyn Fn(&mut Window, &mut App)> {
-        let action_focus_handle = self.action_focus_handle.clone();
-
         Rc::new(move |window, cx| {
-            window.activate_window();
-
-            // Focus back to the user expected focus handle
-            // Then the actions listened on that focus handle can be received
-            //
-            // For example:
-            //
-            // TabPanel
-            //   |- PopupMenu
-            //   |- PanelContent (actions are listened here)
-            //
-            // The `PopupMenu` and `PanelContent` are at the same level in the TabPanel
-            // If the actions are listened on the `PanelContent`,
-            // it can't receive the actions from the `PopupMenu`, unless we focus on `PanelContent`.
-            if let Some(handle) = action_focus_handle.as_ref() {
-                window.focus(&handle);
-            }
-
             window.dispatch_action(action.boxed_clone(), cx);
         })
     }
@@ -431,12 +407,17 @@ impl PopupMenu {
         }
     }
 
-    fn dismiss(&mut self, _: &Dismiss, _window: &mut Window, cx: &mut Context<Self>) {
+    fn dismiss(&mut self, _: &Dismiss, window: &mut Window, cx: &mut Context<Self>) {
         if self.active_submenu().is_some() {
             return;
         }
 
         cx.emit(DismissEvent);
+
+        // Focus back to the previous focused handle.
+        if let Some(previous_focus_handle) = self.previous_focus_handle.as_ref() {
+            window.focus(previous_focus_handle);
+        }
 
         let Some(parent_menu) = self.parent_menu.clone() else {
             return;
@@ -445,7 +426,7 @@ impl PopupMenu {
         // Dismiss parent menu, when this menu is dismissed
         _ = parent_menu.update(cx, |view, cx| {
             view.hovered_menu_ix = None;
-            view.dismiss(&Dismiss, _window, cx);
+            view.dismiss(&Dismiss, window, cx);
         });
     }
 
@@ -460,7 +441,7 @@ impl PopupMenu {
                     keybinding
                         .keystrokes()
                         .into_iter()
-                        .map(|key| key_shortcut(key.clone())),
+                        .map(|key| Kbd::format(key)),
                 );
 
                 return Some(el);
@@ -497,6 +478,134 @@ impl PopupMenu {
 
         Some(icon)
     }
+
+    fn render_item(
+        &self,
+        ix: usize,
+        item: &PopupMenuItem,
+        state: ItemState,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let max_width = self.max_width;
+        let bounds = self.bounds;
+        let has_icon = state.has_icon;
+        let hovered = self.hovered_menu_ix == Some(ix);
+        const EDGE_PADDING: Pixels = px(8.);
+        const INNER_PADDING: Pixels = px(4.);
+
+        let this = ListItem::new(ix)
+            .relative()
+            .text_sm()
+            .py_0()
+            .px(INNER_PADDING)
+            .rounded(state.radius)
+            .items_center()
+            .on_mouse_enter(cx.listener(move |this, _, _, cx| {
+                this.hovered_menu_ix = Some(ix);
+                cx.notify();
+            }));
+
+        match item {
+            PopupMenuItem::Separator => this.h_auto().p_0().disabled(true).child(
+                div()
+                    .rounded_none()
+                    .h(px(1.))
+                    .mx_neg_1()
+                    .my_0p5()
+                    .bg(cx.theme().muted),
+            ),
+            PopupMenuItem::ElementItem { render, .. } => this
+                .on_click(cx.listener(move |this, _, window, cx| this.on_click(ix, window, cx)))
+                .child(
+                    h_flex()
+                        .min_h(ITEM_HEIGHT)
+                        .items_center()
+                        .gap_x_1()
+                        .children(Self::render_icon(has_icon, None, window, cx))
+                        .child((render)(window, cx)),
+                ),
+            PopupMenuItem::Item {
+                icon,
+                label,
+                action,
+                ..
+            } => {
+                let action = action.as_ref().map(|action| action.boxed_clone());
+                let key = Self::render_keybinding(action, window, cx);
+
+                this.on_click(cx.listener(move |this, _, window, cx| this.on_click(ix, window, cx)))
+                    .child(
+                        h_flex()
+                            .h(ITEM_HEIGHT)
+                            .items_center()
+                            .gap_x_1()
+                            .children(Self::render_icon(has_icon, icon.clone(), window, cx))
+                            .child(
+                                h_flex()
+                                    .flex_1()
+                                    .gap_2()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(label.clone())
+                                    .children(key),
+                            ),
+                    )
+            }
+            PopupMenuItem::Submenu { icon, label, menu } => this.selected(hovered).child(
+                h_flex()
+                    .when(hovered, |this| {
+                        this.rounded(cx.theme().radius)
+                            .mx(-INNER_PADDING)
+                            .px(INNER_PADDING)
+                            .bg(cx.theme().accent)
+                            .text_color(cx.theme().accent_foreground)
+                    })
+                    .items_start()
+                    .child(
+                        h_flex()
+                            .size_full()
+                            .items_center()
+                            .gap_x_1()
+                            .children(Self::render_icon(has_icon, icon.clone(), window, cx))
+                            .child(
+                                h_flex()
+                                    .flex_1()
+                                    .gap_2()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(label.clone())
+                                    .child(IconName::ChevronRight),
+                            ),
+                    )
+                    .when(hovered, |this| {
+                        let (anchor, left) =
+                            if window.bounds().size.width - bounds.origin.x < max_width {
+                                (Corner::TopRight, -px(12.))
+                            } else {
+                                (Corner::TopLeft, bounds.size.width + px(4.))
+                            };
+
+                        let is_bottom_pos =
+                            bounds.origin.y + bounds.size.height > window.bounds().size.height;
+
+                        this.child(
+                            anchored()
+                                .anchor(anchor)
+                                .child(
+                                    div()
+                                        .occlude()
+                                        .when(is_bottom_pos, |this| this.bottom_0())
+                                        .when(!is_bottom_pos, |this| this.top(-px(4.)))
+                                        .left(left)
+                                        .child(menu.clone()),
+                                )
+                                .snap_to_window_with_margin(Edges::all(EDGE_PADDING)),
+                        )
+                    }),
+            ),
+        }
+    }
 }
 
 impl FluentBuilder for PopupMenu {}
@@ -507,13 +616,17 @@ impl Focusable for PopupMenu {
     }
 }
 
+#[derive(Clone, Copy)]
+struct ItemState {
+    radius: Pixels,
+    has_icon: bool,
+}
+
 impl Render for PopupMenu {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity().clone();
-        let has_icon = self.menu_items.iter().any(|item| item.has_icon());
         let items_count = self.menu_items.len();
-        let max_width = self.max_width;
-        let bounds = self.bounds;
+
         let max_height = self.max_height.map_or_else(
             || {
                 let window_half_height = window.window_bounds().get_bounds().size.height * 0.5;
@@ -522,8 +635,10 @@ impl Render for PopupMenu {
             |height| height,
         );
 
-        const ITEM_HEIGHT: Pixels = px(26.);
-        let item_radius = cx.theme().radius.min(px(8.));
+        let item_state = ItemState {
+            radius: cx.theme().radius.min(px(8.)),
+            has_icon: self.menu_items.iter().any(|item| item.has_icon()),
+        };
 
         v_flex()
             .id("popup-menu")
@@ -542,7 +657,7 @@ impl Render for PopupMenu {
             .p_1()
             .child(
                 div()
-                    .id("popup-menu-items")
+                    .id("items")
                     .when(self.scrollable, |this| {
                         this.max_h(max_height)
                             .overflow_y_scroll()
@@ -564,169 +679,14 @@ impl Render for PopupMenu {
                             })
                             .children(
                                 self.menu_items
-                                    .iter_mut()
+                                    .iter()
                                     .enumerate()
                                     // Skip last separator
                                     .filter(|(ix, item)| {
                                         !(*ix == items_count - 1 && item.is_separator())
                                     })
                                     .map(|(ix, item)| {
-                                        let this = ListItem::new(("menu-item", ix))
-                                            .relative()
-                                            .text_sm()
-                                            .py_0()
-                                            .px_1()
-                                            .rounded(item_radius)
-                                            .items_center()
-                                            .on_mouse_enter(cx.listener(move |this, _, _, cx| {
-                                                this.hovered_menu_ix = Some(ix);
-                                                cx.notify();
-                                            }));
-
-                                        match item {
-                                            PopupMenuItem::Separator => {
-                                                this.h_auto().p_0().disabled(true).child(
-                                                    div()
-                                                        .rounded_none()
-                                                        .h(px(1.))
-                                                        .mx_neg_1()
-                                                        .my_0p5()
-                                                        .bg(cx.theme().muted),
-                                                )
-                                            }
-                                            PopupMenuItem::ElementItem { render, .. } => this
-                                                .on_click(cx.listener(
-                                                    move |this, _, window, cx| {
-                                                        this.on_click(ix, window, cx)
-                                                    },
-                                                ))
-                                                .child(
-                                                    h_flex()
-                                                        .min_h(ITEM_HEIGHT)
-                                                        .items_center()
-                                                        .gap_x_1()
-                                                        .children(Self::render_icon(
-                                                            has_icon, None, window, cx,
-                                                        ))
-                                                        .child((render)(window, cx)),
-                                                ),
-                                            PopupMenuItem::Item {
-                                                icon,
-                                                label,
-                                                action,
-                                                ..
-                                            } => {
-                                                let action = action
-                                                    .as_ref()
-                                                    .map(|action| action.boxed_clone());
-                                                let key =
-                                                    Self::render_keybinding(action, window, cx);
-
-                                                this.on_click(cx.listener(
-                                                    move |this, _, window, cx| {
-                                                        this.on_click(ix, window, cx)
-                                                    },
-                                                ))
-                                                .child(
-                                                    h_flex()
-                                                        .h(ITEM_HEIGHT)
-                                                        .items_center()
-                                                        .gap_x_1()
-                                                        .children(Self::render_icon(
-                                                            has_icon,
-                                                            icon.clone(),
-                                                            window,
-                                                            cx,
-                                                        ))
-                                                        .child(
-                                                            h_flex()
-                                                                .flex_1()
-                                                                .gap_2()
-                                                                .items_center()
-                                                                .justify_between()
-                                                                .child(label.clone())
-                                                                .children(key),
-                                                        ),
-                                                )
-                                            }
-                                            PopupMenuItem::Submenu { icon, label, menu } => this
-                                                .when(self.hovered_menu_ix == Some(ix), |this| {
-                                                    this.selected(true)
-                                                })
-                                                .child(
-                                                    h_flex()
-                                                        .items_start()
-                                                        .child(
-                                                            h_flex()
-                                                                .size_full()
-                                                                .items_center()
-                                                                .gap_x_1()
-                                                                .children(Self::render_icon(
-                                                                    has_icon,
-                                                                    icon.clone(),
-                                                                    window,
-                                                                    cx,
-                                                                ))
-                                                                .child(
-                                                                    h_flex()
-                                                                        .flex_1()
-                                                                        .gap_2()
-                                                                        .items_center()
-                                                                        .justify_between()
-                                                                        .child(label.clone())
-                                                                        .child(
-                                                                            IconName::ChevronRight,
-                                                                        ),
-                                                                ),
-                                                        )
-                                                        .when_some(
-                                                            self.hovered_menu_ix,
-                                                            |this, hovered_ix| {
-                                                                let (anchor, left) =
-                                                                    if window.bounds().size.width
-                                                                        - bounds.origin.x
-                                                                        < max_width
-                                                                    {
-                                                                        (Corner::TopRight, -px(15.))
-                                                                    } else {
-                                                                        (
-                                                                            Corner::TopLeft,
-                                                                            bounds.size.width
-                                                                                - px(10.),
-                                                                        )
-                                                                    };
-
-                                                                let top = if bounds.origin.y
-                                                                    + bounds.size.height
-                                                                    > window.bounds().size.height
-                                                                {
-                                                                    px(32.)
-                                                                } else {
-                                                                    -px(10.)
-                                                                };
-
-                                                                if hovered_ix == ix {
-                                                                    this.child(
-                                                                anchored()
-                                                                    .anchor(anchor)
-                                                                    .child(
-                                                                        div()
-                                                                            .occlude()
-                                                                            .top(top)
-                                                                            .left(left)
-                                                                            .child(menu.clone()),
-                                                                    )
-                                                                    .snap_to_window_with_margin(
-                                                                        Edges::all(px(8.)),
-                                                                    ),
-                                                            )
-                                                                } else {
-                                                                    this
-                                                                }
-                                                            },
-                                                        ),
-                                                ),
-                                        }
+                                        self.render_item(ix, item, item_state, window, cx)
                                     }),
                             ),
                     ),
@@ -748,66 +708,5 @@ impl Render for PopupMenu {
                         )),
                 )
             })
-    }
-}
-
-/// Return the Platform specific keybinding string by KeyStroke
-pub fn key_shortcut(key: Keystroke) -> String {
-    if cfg!(target_os = "macos") {
-        return format!("{}", key);
-    }
-
-    let mut parts = vec![];
-    if key.modifiers.control {
-        parts.push("Ctrl");
-    }
-    if key.modifiers.alt {
-        parts.push("Alt");
-    }
-    if key.modifiers.platform {
-        parts.push("Win");
-    }
-    if key.modifiers.shift {
-        parts.push("Shift");
-    }
-
-    // Capitalize the first letter
-    let key = if let Some(first_c) = key.key.chars().next() {
-        format!("{}{}", first_c.to_uppercase(), &key.key[1..])
-    } else {
-        key.key.to_string()
-    };
-
-    parts.push(&key);
-    parts.join("+")
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_key_shortcut() {
-        use super::key_shortcut;
-        use gpui::Keystroke;
-
-        if cfg!(target_os = "windows") {
-            assert_eq!(key_shortcut(Keystroke::parse("a").unwrap()), "A");
-            assert_eq!(key_shortcut(Keystroke::parse("ctrl-a").unwrap()), "Ctrl+A");
-            assert_eq!(
-                key_shortcut(Keystroke::parse("ctrl-alt-a").unwrap()),
-                "Ctrl+Alt+A"
-            );
-            assert_eq!(
-                key_shortcut(Keystroke::parse("ctrl-alt-shift-a").unwrap()),
-                "Ctrl+Alt+Shift+A"
-            );
-            assert_eq!(
-                key_shortcut(Keystroke::parse("ctrl-alt-shift-win-a").unwrap()),
-                "Ctrl+Alt+Win+Shift+A"
-            );
-            assert_eq!(
-                key_shortcut(Keystroke::parse("ctrl-shift-backspace").unwrap()),
-                "Ctrl+Shift+Backspace"
-            );
-        }
     }
 }

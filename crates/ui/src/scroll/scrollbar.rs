@@ -132,8 +132,10 @@ impl ScrollbarState {
     fn with_hovered_on_thumb(&self, axis: Option<ScrollbarAxis>) -> Self {
         let mut state = *self;
         state.hovered_on_thumb = axis;
-        if axis.is_some() {
-            state.last_scroll_time = Some(std::time::Instant::now());
+        if self.is_scrollbar_visible() {
+            if axis.is_some() {
+                state.last_scroll_time = Some(std::time::Instant::now());
+            }
         }
         state
     }
@@ -630,7 +632,8 @@ impl Element for Scrollbar {
         cx: &mut App,
     ) {
         let hitbox_bounds = prepaint.hitbox.bounds;
-        let is_visible = self.state.get().is_scrollbar_visible();
+        let is_visible =
+            self.state.get().is_scrollbar_visible() || cx.theme().scrollbar_show.is_always();
         let is_hover_to_show = cx.theme().scrollbar_show.is_hover();
 
         // Update last_scroll_time when offset is changed.

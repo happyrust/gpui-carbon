@@ -14,8 +14,6 @@ use story::{
     ProgressStory, Quit, ResizableStory, ScrollableStory, SidebarStory, StoryContainer,
     SwitchStory, TableStory, TextStory, TooltipStory,
 };
-use std::ops::Range;
-use rand::Rng;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct AddPanel(DockPlacement);
@@ -425,7 +423,7 @@ impl StoryWorkspace {
         cx: &mut Context<Self>,
     ) {
         // Random pick up a panel to add
-        let panel = match rand::rng().random_range(0..18) {
+        let panel = match rand::random::<usize>() % 18 {
             0 => Arc::new(StoryContainer::panel::<ButtonStory>(window, cx)),
             1 => Arc::new(StoryContainer::panel::<InputStory>(window, cx)),
             2 => Arc::new(StoryContainer::panel::<DropdownStory>(window, cx)),

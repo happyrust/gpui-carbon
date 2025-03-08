@@ -12,23 +12,13 @@ fake = { version = "2.10.0", features = ["dummy"] }
 gpui.workspace = true
 gpui-component = { workspace = true, features = ["webview"] }
 reqwest_client = { git = "https://github.com/huacnlee/zed.git", branch = "webview" }
-rand = "0.9.0"
+rand = "0.8"
 regex = "1"
 rust-embed.workspace = true
 serde = "1"
 serde_json = "1"
 unindent = "0.2.3"
 raw-window-handle = { version = "0.6", features = ["std"] }
-schemars = "0.8.22"
-rusqlite = "0.32.0"
-tokio-rusqlite = "0.6.0"
-rfd = "0.15.2"
-
-[dev-dependencies]
-calamine = "0.26.1"
-# rusqlite = { version = "0.33.0", features = ["bundled"] }
-# tokio-rusqlite = "0.6.0"
-# libsqlite3-sys = "0.31.0"
 
 [lints]
 workspace = true

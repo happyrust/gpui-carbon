@@ -651,6 +651,7 @@ impl TabPanel {
         let tabs_count = self.panels.len();
 
         TabBar::new("tab-bar")
+            .mt(-px(1.))
             .track_scroll(self.tab_bar_scroll_handle.clone())
             .when(
                 left_dock_button.is_some() || bottom_dock_button.is_some(),
@@ -686,7 +687,8 @@ impl TabPanel {
                 }
 
                 Some(
-                    Tab::new(("tab", ix), panel.title(window, cx))
+                    Tab::new("")
+                        .child(panel.title(window, cx))
                         .py_2()
                         .selected(active)
                         .disabled(disabled)
@@ -720,7 +722,7 @@ impl TabPanel {
                         }),
                 )
             }))
-            .child(
+            .last_empty_space(
                 // empty space to allow move to last tab right
                 div()
                     .id("tab-bar-empty-space")
@@ -785,16 +787,20 @@ impl TabPanel {
         let is_render_in_tabs = self.panels.len() > 1 && self.inner_padding(cx);
 
         v_flex()
-            .id("tab-content")
             .group("")
-            .overflow_y_scroll()
-            .overflow_x_hidden()
             .flex_1()
             .when(is_render_in_tabs, |this| this.pt_2())
             .child(
-                active_panel
-                    .view()
-                    .cached(StyleRefinement::default().v_flex().size_full()),
+                div()
+                    .id("tab-content")
+                    .overflow_y_scroll()
+                    .overflow_x_hidden()
+                    .flex_1()
+                    .child(
+                        active_panel
+                            .view()
+                            .cached(StyleRefinement::default().v_flex().size_full()),
+                    ),
             )
             .when(state.droppable, |this| {
                 this.on_drag_move(cx.listener(Self::on_panel_drag_move))

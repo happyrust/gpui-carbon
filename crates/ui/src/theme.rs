@@ -179,6 +179,8 @@ pub struct ThemeColor {
     pub tab_active_foreground: Hsla,
     /// TabBar background color.
     pub tab_bar: Hsla,
+    /// TabBar segmented background color.
+    pub tab_bar_segmented: Hsla,
     /// Tab text color.
     pub tab_foreground: Hsla,
     /// Table background color.
@@ -214,7 +216,7 @@ pub struct ThemeColor {
 impl ThemeColor {
     pub fn light() -> Self {
         Self {
-            accent: hsl(240.0, 5.0, 96.0),
+            accent: hsl(240.0, 4.8, 93.9),
             accent_foreground: hsl(240.0, 5.9, 10.0),
             accordion: hsl(0.0, 0.0, 100.0),
             accordion_active: hsl(240.0, 5.9, 90.0),
@@ -274,8 +276,9 @@ impl ThemeColor {
             tab: gpui::transparent_black(),
             tab_active: hsl(0.0, 0.0, 100.0),
             tab_active_foreground: hsl(240.0, 10., 3.9),
-            tab_bar: hsl(240.0, 4.8, 95.9),
-            tab_foreground: hsl(240.0, 10., 3.9),
+            tab_bar: hsl(240.0, 14.3, 95.9),
+            tab_bar_segmented: hsl(240.0, 14.3, 95.9),
+            tab_foreground: hsl(240.0, 10., 33.9),
             table: hsl(0.0, 0.0, 100.),
             table_active: hsl(211.0, 97.0, 85.0).opacity(0.2),
             table_active_border: hsl(211.0, 97.0, 85.0),
@@ -354,6 +357,7 @@ impl ThemeColor {
             tab_active: hsl(0.0, 0.0, 8.0),
             tab_active_foreground: hsl(0., 0., 78.),
             tab_bar: hsl(299.0, 0., 5.5),
+            tab_bar_segmented: hsl(299.0, 0., 5.5),
             tab_foreground: hsl(0., 0., 78.),
             table: hsl(0.0, 0.0, 8.0),
             table_active: hsl(240.0, 3.7, 15.0).opacity(0.2),
@@ -407,13 +411,21 @@ impl Global for Theme {}
 
 impl Theme {
     /// Returns the global theme reference
+    #[inline(always)]
     pub fn global(cx: &App) -> &Theme {
         cx.global::<Theme>()
     }
 
     /// Returns the global theme mutable reference
+    #[inline(always)]
     pub fn global_mut(cx: &mut App) -> &mut Theme {
         cx.global_mut::<Theme>()
+    }
+
+    /// Returns true if the theme is dark.
+    #[inline(always)]
+    pub fn is_dark(&self) -> bool {
+        self.mode.is_dark()
     }
 
     /// Apply a mask color to the theme.
@@ -457,6 +469,7 @@ impl Theme {
         self.tab_active = self.tab_active.apply(mask_color);
         self.tab_foreground = self.tab_foreground.apply(mask_color);
         self.tab_active_foreground = self.tab_active_foreground.apply(mask_color);
+        self.tab_bar_segmented = self.tab_bar_segmented.apply(mask_color);
         self.progress_bar = self.progress_bar.apply(mask_color);
         self.slider_bar = self.slider_bar.apply(mask_color);
         self.slider_thumb = self.slider_thumb.apply(mask_color);
@@ -513,7 +526,7 @@ impl Theme {
         if cx.should_auto_hide_scrollbars() {
             cx.global_mut::<Theme>().scrollbar_show = ScrollbarShow::Scrolling;
         } else {
-            cx.global_mut::<Theme>().scrollbar_show = ScrollbarShow::Always;
+            cx.global_mut::<Theme>().scrollbar_show = ScrollbarShow::Hover;
         }
     }
 
@@ -541,8 +554,9 @@ impl Theme {
 
 impl From<ThemeColor> for Theme {
     fn from(colors: ThemeColor) -> Self {
+        let mode = ThemeMode::default();
         Theme {
-            mode: ThemeMode::default(),
+            mode,
             transparent: Hsla::transparent_black(),
             font_size: px(16.),
             font_family: if cfg!(target_os = "macos") {
@@ -570,7 +584,7 @@ pub enum ThemeMode {
 }
 
 impl ThemeMode {
-    #[inline]
+    #[inline(always)]
     pub fn is_dark(&self) -> bool {
         matches!(self, Self::Dark)
     }

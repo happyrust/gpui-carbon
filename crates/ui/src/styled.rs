@@ -58,6 +58,18 @@ pub trait StyledExt: Styled + Sized {
             .pr(paddings.right.into())
     }
 
+    /// Apply margins to the element.
+    fn margins<L>(self, margins: impl Into<Edges<L>>) -> Self
+    where
+        L: Into<DefiniteLength> + Clone + Default + std::fmt::Debug,
+    {
+        let margins = margins.into();
+        self.mt(margins.top.into())
+            .mb(margins.bottom.into())
+            .ml(margins.left.into())
+            .mr(margins.right.into())
+    }
+
     /// Render a border with a width of 1px, color red
     fn debug_red(self) -> Self {
         if cfg!(debug_assertions) {
@@ -271,6 +283,7 @@ pub trait StyleSized<T: Styled> {
     fn size_with(self, size: Size) -> Self;
     /// Apply the table cell size (Font size, padding) with the given `Size`.
     fn table_cell_size(self, size: Size) -> Self;
+    fn button_text_size(self, size: Size) -> Self;
 }
 
 impl<T: Styled> StyleSized<T> for T {
@@ -386,6 +399,14 @@ impl<T: Styled> StyleSized<T> for T {
         .pr(padding.right)
         .pt(padding.top)
         .pb(padding.bottom)
+    }
+
+    fn button_text_size(self, size: Size) -> Self {
+        match size {
+            Size::XSmall => self.text_xs(),
+            Size::Small => self.text_sm(),
+            _ => self.text_base(),
+        }
     }
 }
 

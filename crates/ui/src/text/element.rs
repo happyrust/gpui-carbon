@@ -1,14 +1,14 @@
 use std::ops::Range;
 
 use gpui::{
-    div, img, prelude::FluentBuilder as _, px, relative, rems, App, DefiniteLength, ElementId,
-    FontStyle, FontWeight, Half, HighlightStyle, InteractiveElement as _, InteractiveText,
-    IntoElement, Length, ObjectFit, ParentElement, RenderOnce, SharedString, SharedUri, Styled,
-    StyledImage as _, StyledText, Window,
+    div, img, prelude::FluentBuilder as _, px, relative, rems, AnyElement, App, DefiniteLength,
+    ElementId, FontStyle, FontWeight, Half, HighlightStyle, InteractiveElement as _,
+    InteractiveText, IntoElement, Length, ObjectFit, ParentElement, Rems, RenderOnce, SharedString,
+    SharedUri, Styled, StyledImage as _, StyledText, Window,
 };
 use markdown::mdast;
 
-use crate::{h_flex, v_flex, ActiveTheme as _, Icon, IconName};
+use crate::{h_flex, highlighter::Highlighter, v_flex, ActiveTheme as _, Icon, IconName};
 
 use super::{utils::list_item_prefix, TextViewStyle};
 
@@ -199,6 +199,28 @@ impl Paragraph {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodeBlock {
+    code: SharedString,
+    lang: Option<SharedString>,
+    styles: Vec<(Range<usize>, HighlightStyle)>,
+}
+
+impl CodeBlock {
+    pub fn new(
+        code: SharedString,
+        lang: Option<SharedString>,
+        text_view_style: &TextViewStyle,
+    ) -> Self {
+        let highlight = Highlighter::new(
+            lang.as_ref().map(|v| v.as_ref()),
+            text_view_style.highlight_theme.as_ref(),
+        );
+        let styles = highlight.highlight(code.as_ref());
+        Self { code, lang, styles }
+    }
+}
+
 /// Ref:
 /// https://ui.shadcn.com/docs/components/typography
 #[allow(unused)]
@@ -224,10 +246,7 @@ pub enum Node {
         /// Whether the list item is checked, if None, it's not a checkbox
         checked: Option<bool>,
     },
-    CodeBlock {
-        code: SharedString,
-        lang: Option<SharedString>,
-    },
+    CodeBlock(CodeBlock),
     Table(Table),
     Break {
         html: bool,
@@ -331,7 +350,8 @@ impl RenderOnce for Paragraph {
 
                 let text_style = window.text_style();
                 let element_id: ElementId = span.unwrap_or_default().into();
-                let styled_text = StyledText::new(text).with_highlights(&text_style, highlights);
+                let styled_text =
+                    StyledText::new(text).with_default_highlights(&text_style, highlights);
                 let link_ranges = links
                     .iter()
                     .map(|(range, _)| range.clone())
@@ -547,6 +567,24 @@ impl Node {
         }
     }
 
+    fn render_codeblock(
+        code_block: CodeBlock,
+        mb: Rems,
+        _: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        div()
+            .mb(mb)
+            .p_3()
+            .rounded(cx.theme().radius)
+            .bg(cx.theme().secondary)
+            .font_family("Menlo, Monaco, Consolas, monospace")
+            .text_size(rems(0.875))
+            .relative()
+            .child(StyledText::new(code_block.code.clone()).with_highlights(code_block.styles))
+            .into_any_element()
+    }
+
     pub(crate) fn render(
         self,
         list_state: Option<ListState>,
@@ -633,15 +671,7 @@ impl Node {
                     items
                 })
                 .into_any_element(),
-            Node::CodeBlock { code, .. } => div()
-                .mb(mb)
-                .rounded(cx.theme().radius)
-                .bg(cx.theme().secondary)
-                .p_3()
-                .text_size(rems(0.875))
-                .relative()
-                .child(code)
-                .into_any_element(),
+            Node::CodeBlock(code_block) => Self::render_codeblock(code_block, mb, window, cx),
             Node::Table { .. } => Self::render_table(&self, window, cx).into_any_element(),
             Node::Divider => div()
                 .bg(cx.theme().border)
@@ -764,8 +794,12 @@ impl Node {
                         .join("\n")
                 )
             }
-            Node::CodeBlock { code, lang } => {
-                format!("```{}\n{}\n```", lang.clone().unwrap_or_default(), code)
+            Node::CodeBlock(code_block) => {
+                format!(
+                    "```{}\n{}\n```",
+                    code_block.lang.clone().unwrap_or_default(),
+                    code_block.code
+                )
             }
             Node::Table(table) => {
                 let header = table

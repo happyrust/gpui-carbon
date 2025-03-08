@@ -1,13 +1,13 @@
 use gpui::*;
-use story::{Assets, TextStory};
+use story::{Assets, ButtonStory};
 
 pub struct Example {
-    root: Entity<TextStory>,
+    root: Entity<ButtonStory>,
 }
 
 impl Example {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let root = TextStory::view(window, cx);
+        let root = ButtonStory::view(window, cx);
 
         Self { root }
     }
@@ -19,12 +19,7 @@ impl Example {
 
 impl Render for Example {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .p_4()
-            .id("example")
-            .overflow_y_scroll()
-            .size_full()
-            .child(self.root.clone())
+        div().p_4().size_full().child(self.root.clone())
     }
 }
 
@@ -35,6 +30,6 @@ fn main() {
         story::init(cx);
         cx.activate(true);
 
-        story::create_new_window("List Example", Example::view, cx);
+        story::create_new_window("Button Example", Example::view, cx);
     });
 }

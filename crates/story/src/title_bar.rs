@@ -40,7 +40,7 @@ impl AppTitleBar {
         if cx.should_auto_hide_scrollbars() {
             Theme::global_mut(cx).scrollbar_show = ScrollbarShow::Scrolling;
         } else {
-            Theme::global_mut(cx).scrollbar_show = ScrollbarShow::Always;
+            Theme::global_mut(cx).scrollbar_show = ScrollbarShow::Hover;
         }
 
         let theme_color_picker = cx.new(|cx| {
@@ -122,34 +122,34 @@ impl Render for AppTitleBar {
                     .px_2()
                     .gap_2()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    // .child(self.theme_color_picker.clone())
+                    .child(self.theme_color_picker.clone())
                     .child((self.child.clone())(window, cx))
-                    // .child(
-                    //     Button::new("theme-mode")
-                    //         .map(|this| {
-                    //             if cx.theme().mode.is_dark() {
-                    //                 this.icon(IconName::Sun)
-                    //             } else {
-                    //                 this.icon(IconName::Moon)
-                    //             }
-                    //         })
-                    //         .small()
-                    //         .ghost()
-                    //         .on_click(cx.listener(Self::change_color_mode)),
-                    // )
-                    // .child(self.locale_selector.clone())
-                    // .child(self.font_size_selector.clone())
-                    // .child(
-                    //     Badge::new().dot().count(1).child(
-                    //         Button::new("github")
-                    //             .icon(IconName::GitHub)
-                    //             .small()
-                    //             .ghost()
-                    //             .on_click(|_, _, cx| {
-                    //                 cx.open_url("https://github.com/longbridge/gpui-component")
-                    //             }),
-                    //     ),
-                    // )
+                    .child(
+                        Button::new("theme-mode")
+                            .map(|this| {
+                                if cx.theme().mode.is_dark() {
+                                    this.icon(IconName::Sun)
+                                } else {
+                                    this.icon(IconName::Moon)
+                                }
+                            })
+                            .small()
+                            .ghost()
+                            .on_click(cx.listener(Self::change_color_mode)),
+                    )
+                    .child(self.locale_selector.clone())
+                    .child(self.font_size_selector.clone())
+                    .child(
+                        Badge::new().dot().count(1).child(
+                            Button::new("github")
+                                .icon(IconName::GitHub)
+                                .small()
+                                .ghost()
+                                .on_click(|_, _, cx| {
+                                    cx.open_url("https://github.com/longbridge/gpui-component")
+                                }),
+                        ),
+                    )
                     .child(
                         div().relative().child(
                             Badge::new().count(notifications_count).max(99).child(

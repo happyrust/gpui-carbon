@@ -1,15 +1,15 @@
 use gpui::*;
-use story::{Assets, TextStory};
+use story::{Assets, FormStory};
 
 pub struct Example {
-    root: Entity<TextStory>,
+    story: Entity<FormStory>,
 }
 
 impl Example {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let root = TextStory::view(window, cx);
+        let story = FormStory::view(window, cx);
 
-        Self { root }
+        Self { story }
     }
 
     fn view(window: &mut Window, cx: &mut App) -> Entity<Self> {
@@ -19,12 +19,7 @@ impl Example {
 
 impl Render for Example {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .p_4()
-            .id("example")
-            .overflow_y_scroll()
-            .size_full()
-            .child(self.root.clone())
+        div().p_4().size_full().child(self.story.clone())
     }
 }
 
@@ -35,6 +30,6 @@ fn main() {
         story::init(cx);
         cx.activate(true);
 
-        story::create_new_window("List Example", Example::view, cx);
+        story::create_new_window("Form Example", Example::view, cx);
     });
 }

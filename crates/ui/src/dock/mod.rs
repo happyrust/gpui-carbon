@@ -69,20 +69,6 @@ pub struct DockArea {
     _subscriptions: Vec<Subscription>,
 }
 
-impl DockArea {
-    pub fn left_dock(&self) -> Option<Entity<Dock>> {
-        self.left_dock.clone()
-    }
-
-    pub fn bottom_dock(&self) -> Option<Entity<Dock>> {
-        self.bottom_dock.clone()
-    }
-
-    pub fn right_dock(&self) -> Option<Entity<Dock>> {
-        self.right_dock.clone()
-    }
-}
-
 /// DockItem is a tree structure that represents the layout of the dock.
 #[derive(Clone)]
 pub enum DockItem {
@@ -321,24 +307,6 @@ impl DockItem {
             Self::Panel { view } => Some(view.clone()),
             Self::Tiles { items, .. } => items.iter().find_map(|item| {
                 if &item.panel == &panel {
-                    Some(item.panel.clone())
-                } else {
-                    None
-                }
-            }),
-        }
-    }
-
-    /// Find existing panel in the dock item.
-    pub fn find_panel_by_name(&self, panel_name: &str, cx: &App) -> Option<Arc<dyn PanelView>> {
-        match self {
-            Self::Split { items, .. } => {
-                items.iter().find_map(|item| item.find_panel_by_name(panel_name, cx))
-            }
-            Self::Tabs { items, .. } => items.iter().find(|item| item.panel_name(cx) == panel_name).cloned(),
-            Self::Panel { view } => Some(view.clone()),
-            Self::Tiles { items, .. } => items.iter().find_map(|item| {
-                if item.panel.panel_name(cx) == panel_name {
                     Some(item.panel.clone())
                 } else {
                     None

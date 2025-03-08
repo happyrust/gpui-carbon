@@ -6,7 +6,7 @@ use gpui::{
     ParentElement, Pixels, Render, ScrollHandle, SharedString, Size, Styled, Window,
 };
 use gpui_component::{
-    button::{Button, ButtonGroup},
+    button::{Button, ButtonGroup, ButtonVariants as _},
     divider::Divider,
     gray_100, gray_800, h_flex,
     label::Label,
@@ -103,6 +103,8 @@ impl ScrollableStory {
                     .gap_2()
                     .child(
                         ButtonGroup::new("test-cases")
+                            .outline()
+                            .compact()
                             .child(
                                 Button::new("test-0")
                                     .label("Size 0")
@@ -138,6 +140,8 @@ impl ScrollableStory {
                     .child(Divider::vertical().px_2())
                     .child(
                         ButtonGroup::new("scrollbars")
+                            .outline()
+                            .compact()
                             .child(
                                 Button::new("test-axis-both")
                                     .label("Both Scrollbar")
@@ -202,7 +206,7 @@ impl Render for ScrollableStory {
             .gap_4()
             .child(self.render_buttons(cx))
             .child(
-                div().w_full().flex_1().child(
+                div().w_full().flex_1().min_h_64().child(
                     div().relative().size_full().child(
                         v_flex()
                             .id("test-0")

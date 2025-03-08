@@ -16,8 +16,10 @@ mod scrollable_story;
 mod sidebar_story;
 mod switch_story;
 mod table_story;
+mod tabs_story;
 mod text_story;
 mod title_bar;
+mod toggle_story;
 mod tooltip_story;
 mod webview_story;
 
@@ -28,6 +30,8 @@ pub use button_story::ButtonStory;
 pub use calendar_story::CalendarStory;
 pub use dropdown_story::DropdownStory;
 pub use form_story::FormStory;
+pub use tabs_story::TabsStory;
+pub use toggle_story::ToggleStory;
 
 use gpui::{
     actions, div, impl_internal_actions, prelude::FluentBuilder as _, px, size, AnyElement,
@@ -79,7 +83,7 @@ pub struct SelectRadius(usize);
 
 impl_internal_actions!(
     story,
-    [SelectLocale, SelectFont, SelectRadius, SelectScrollbarShow,]
+    [SelectLocale, SelectFont, SelectRadius, SelectScrollbarShow]
 );
 
 actions!(story, [Quit, Open, CloseWindow]);
@@ -481,8 +485,7 @@ impl Panel for StoryContainer {
     }
 
     fn popup_menu(&self, menu: PopupMenu, _window: &Window, _cx: &App) -> PopupMenu {
-        menu.track_focus(&self.focus_handle)
-            .menu("Info", Box::new(ShowPanelInfo))
+        menu.menu("Info", Box::new(ShowPanelInfo))
     }
 
     fn toolbar_buttons(&self, _window: &mut Window, _cx: &mut App) -> Option<Vec<Button>> {
