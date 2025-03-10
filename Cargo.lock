@@ -587,7 +587,7 @@ dependencies = [
  "bitflags 2.6.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "lazy_static",
  "lazycell",
  "log",
@@ -610,7 +610,7 @@ dependencies = [
  "bitflags 2.6.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -1153,7 +1153,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "indexmap 2.7.1",
  "rustc-hash 2.1.1",
@@ -1495,18 +1495,19 @@ dependencies = [
 
 [[package]]
 name = "ctor"
-version = "0.3.6"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21d960ecacd0a1bf55e73144b72de745e7bf275c7952c50e36e8af0a0cb7ab1f"
+checksum = "07e9666f4a9a948d4f1dff0c08a4512b0f7c86414b23960104c243c10d79f4c3"
 dependencies = [
  "ctor-proc-macro",
+ "dtor",
 ]
 
 [[package]]
 name = "ctor-proc-macro"
-version = "0.0.4"
+version = "0.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c426d2ba3e525b39c1f0a9ba41b9fe61878dee11fa4e4a76b6ab440f46c5db5d"
+checksum = "4f211af61d8efdd104f96e57adf5e426ba1bc3ed7a4ead616e15e5881fd79c4d"
 
 [[package]]
 name = "darling"
@@ -1612,7 +1613,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1729,6 +1730,21 @@ checksum = "cd1511a7b6a56299bd043a9c167a6d2bfb37bf84a6dfceaba651168adfb43c87"
 dependencies = [
  "dtoa",
 ]
+
+[[package]]
+name = "dtor"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "222ef136a1c687d4aa0395c175f2c4586e379924c352fd02f7870cf7de783c23"
+dependencies = [
+ "dtor-proc-macro",
+]
+
+[[package]]
+name = "dtor-proc-macro"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7454e41ff9012c00d53cf7f475c5e3afa3b91b7c90568495495e8d9bf47a1055"
 
 [[package]]
 name = "dummy"
@@ -2631,7 +2647,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -2749,7 +2765,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3026,7 +3042,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3776,7 +3792,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "anyhow",
  "bindgen 0.70.1",
@@ -5110,7 +5126,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.7",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5366,7 +5382,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "derive_refineable",
 ]
@@ -5459,7 +5475,7 @@ dependencies = [
 [[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5977,7 +5993,7 @@ checksum = "d369a96f978623eb3dc28807c4852d6cc617fed53da5d3c400feff1ef34a714a"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "anyhow",
  "serde",
@@ -6448,7 +6464,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "arrayvec",
  "log",
@@ -7237,7 +7253,7 @@ checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/huacnlee/zed.git?branch=webview#e374176d6d80d8cc2a1458080f93ad914ca3ac2f"
+source = "git+https://github.com/huacnlee/zed.git?branch=webview#deac3307cea9c32c4571a3fe797555593c9efaef"
 dependencies = [
  "anyhow",
  "async-fs 2.1.2",
