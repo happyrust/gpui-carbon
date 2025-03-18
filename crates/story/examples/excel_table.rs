@@ -1596,24 +1596,24 @@ impl TableDelegate for ResultTableDelegate {
 }
 
 struct CarbonResultPanel {
-    table: Entity<Table<ResultTableDelegate>>,
-    focus_handle: FocusHandle,
-    story: Entity<ExcelStory>,
-    _subscriptions: Vec<Subscription>,
-    sub_items_panel: Option<Entity<SubItemsPanel>>,
+    table: Entity<Table<ResultTableDelegate>>, // 表格实体
+    focus_handle: FocusHandle, // 焦点句柄
+    story: Entity<ExcelStory>, // Excel 故事实体
+    _subscriptions: Vec<Subscription>, // 订阅列表
+    sub_items_panel: Option<Entity<ResultDetailsPanel>>, // 子项目面板
 }
 
 impl CarbonResultPanel {
     pub fn view(
-        story: Entity<ExcelStory>,
-        window: &mut Window,
-        cx: &mut Context<DockArea>,
+        story: Entity<ExcelStory>, // Excel 故事实体
+        window: &mut Window, // 窗口引用
+        cx: &mut Context<DockArea>, // 上下文
     ) -> Entity<Self> {
-        let delegate = ResultTableDelegate::new();
-        let table = cx.new(|cx| Table::new(delegate, window, cx));
+        let delegate = ResultTableDelegate::new(); // 创建结果表委托
+        let table = cx.new(|cx| Table::new(delegate, window, cx)); // 创建新表格
 
         let view = cx.new(|cx| {
-            let table_clone = table.clone();
+            let table_clone = table.clone(); // 克隆表格
             let subscription = cx.subscribe_in(
                 &story,
                 window,
@@ -1622,12 +1622,12 @@ impl CarbonResultPanel {
                       _: &UpdateResultTable,
                       window: &mut Window,
                       cx: &mut Context<CarbonResultPanel>| {
-                    let story_data = story.read(cx);
-                    let project_type = story_data.project_type.clone();
-                    let road_type = story_data.road_type.clone();
-                    debug!("UpdateResultTable event received", &project_type, &road_type);
-                    let db_path = story_data.db_path.clone();
-                    drop(story_data);
+                    let story_data = story.read(cx); // 读取故事数据
+                    let project_type = story_data.project_type.clone(); // 项目类型
+                    let road_type = story_data.road_type.clone(); // 道路类型
+                    debug!("UpdateResultTable event received", &project_type, &road_type); // 调试信息
+                    let db_path = story_data.db_path.clone(); // 数据库路径
+                    drop(story_data); // 释放故事数据
 
                     table_clone.update(cx, |table, cx| {
                         if project_type.is_empty() || road_type.is_empty() {
@@ -1649,57 +1649,57 @@ impl CarbonResultPanel {
                                 cx,
                             );
                         }
-                        table.refresh(cx);
+                        table.refresh(cx); // 刷新表格
                     });
                 },
             );
 
             let mut panel = Self {
-                table: table.clone(),
-                focus_handle: cx.focus_handle(),
-                story: story.clone(),
-                _subscriptions: vec![subscription],
-                sub_items_panel: None,
+                table: table.clone(), // 克隆表格
+                focus_handle: cx.focus_handle(), // 获取焦点句柄
+                story: story.clone(), // 克隆故事
+                _subscriptions: vec![subscription], // 添加订阅
+                sub_items_panel: None, // 初始化子项目面板
             };
 
-            // Subscribe to table selection changes
+            // 订阅表格选择更改事件
             let table_subscription = cx.subscribe_in(&table, window, {
-                let story = story.clone();
+                let story = story.clone(); // 克隆故事
                 move |this: &mut CarbonResultPanel,
                       _table,
                       event: &TableEvent,
                       window: &mut Window,
                       cx: &mut Context<CarbonResultPanel>| {
                     if let TableEvent::SelectRow(row_ix) = event {
-                        debug!("Row selected:", row_ix);
+                        debug!("Row selected:", row_ix); // 调试信息
                         if *row_ix == 1 {
                             // 当选中第二行时
-                            let story_data = story.read(cx);
-                            let dock_area = story_data.dock_area.clone();
-                            drop(story_data);
+                            let story_data = story.read(cx); // 读取故事数据
+                            let dock_area = story_data.dock_area.clone(); // 克隆停靠区域
+                            drop(story_data); // 释放故事数据
 
-                            // Create sub items panel if not exists
+                            // 如果子项目面板不存在则创建
                             if this.sub_items_panel.is_none() {
-                                debug!("Creating new sub items panel");
-                                // Create sub items panel
-                                let delegate = SubItemsTableDelegate::new();
-                                let table = cx.new(|cx| Table::new(delegate, window, cx));
-                                let sub_items_panel = cx.new(|cx| SubItemsPanel {
+                                debug!("Creating new sub items panel"); // 调试信息
+                                // 创建子项目面板
+                                let delegate = ResultDetailsTableDelegate::new(); // 创建子项目表委托
+                                let table = cx.new(|cx| Table::new(delegate, window, cx)); // 创建新表格
+                                let sub_items_panel = cx.new(|cx| ResultDetailsPanel {
                                     table,
                                     focus_handle: cx.focus_handle(),
                                 });
 
-                                // Set sub rows data
-                                let table_data = this.table.read(cx).delegate().clone();
-                                debug!("Number of sub rows to display:", table_data.sub_rows.len());
+                                // 设置子行数据
+                                let table_data = this.table.read(cx).delegate().clone(); // 克隆表格数据
+                                debug!("Number of sub rows to display:", table_data.sub_rows.len()); // 调试信息
                                 sub_items_panel.update(cx, |panel, cx| {
                                     panel.table.update(cx, |table, cx| {
-                                        table.delegate_mut().set_rows(table_data.sub_rows.clone());
-                                        table.refresh(cx);
+                                        table.delegate_mut().set_rows(table_data.sub_rows.clone()); // 设置子行
+                                        table.refresh(cx); // 刷新表格
                                     });
                                 });
 
-                                // Add panel to dock area
+                                // 将面板添加到停靠区域
                                 let panel_item = DockItem::tab(
                                     sub_items_panel.clone(),
                                     &Entity::downgrade(&dock_area),
@@ -1716,16 +1716,16 @@ impl CarbonResultPanel {
                                     );
                                 });
 
-                                this.sub_items_panel = Some(sub_items_panel);
+                                this.sub_items_panel = Some(sub_items_panel); // 设置子项目面板
                             } else if let Some(panel) = &this.sub_items_panel {
-                                debug!("Updating existing sub items panel");
-                                // Update existing panel data
-                                let table_data = this.table.read(cx).delegate().clone();
-                                debug!("Number of sub rows to update:", table_data.sub_rows.len());
+                                debug!("Updating existing sub items panel"); // 调试信息
+                                // 更新现有面板数据
+                                let table_data = this.table.read(cx).delegate().clone(); // 克隆表格数据
+                                debug!("Number of sub rows to update:", table_data.sub_rows.len()); // 调试信息
                                 panel.update(cx, |panel, cx| {
                                     panel.table.update(cx, |table, cx| {
-                                        table.delegate_mut().set_rows(table_data.sub_rows.clone());
-                                        table.refresh(cx);
+                                        table.delegate_mut().set_rows(table_data.sub_rows.clone()); // 设置子行
+                                        table.refresh(cx); // 刷新表格
                                     });
                                 });
                             }
@@ -1734,7 +1734,7 @@ impl CarbonResultPanel {
                 }
             });
 
-            panel._subscriptions.push(table_subscription);
+            panel._subscriptions.push(table_subscription); // 添加表格订阅
             panel
         });
 
@@ -1766,17 +1766,17 @@ impl Render for CarbonResultPanel {
     }
 }
 
-struct SubItemsPanel {
-    table: Entity<Table<SubItemsTableDelegate>>,
-    focus_handle: FocusHandle,
+struct ResultDetailsPanel {
+    table: Entity<Table<ResultDetailsTableDelegate>>, // 表格实体
+    focus_handle: FocusHandle, // 焦点句柄
 }
 
-struct SubItemsTableDelegate {
+struct ResultDetailsTableDelegate {
     rows: Vec<SubItemRow>,
     columns: Vec<String>,
 }
 
-impl SubItemsTableDelegate {
+impl ResultDetailsTableDelegate {
     fn new() -> Self {
         let columns = vec![
             "序号".to_string(),
@@ -1841,9 +1841,9 @@ impl SubItemsTableDelegate {
     }
 }
 
-impl SubItemsPanel {
+impl ResultDetailsPanel {
     pub fn view(window: &mut Window, cx: &mut Context<DockArea>) -> Entity<Self> {
-        let delegate = SubItemsTableDelegate::new();
+        let delegate = ResultDetailsTableDelegate::new();
         let table = cx.new(|cx| Table::new(delegate, window, cx));
 
         cx.new(|cx| Self {
@@ -1853,9 +1853,9 @@ impl SubItemsPanel {
     }
 }
 
-impl EventEmitter<PanelEvent> for SubItemsPanel {}
+impl EventEmitter<PanelEvent> for ResultDetailsPanel {}
 
-impl Panel for SubItemsPanel {
+impl Panel for ResultDetailsPanel {
     fn panel_name(&self) -> &'static str {
         "SubItemsPanel"
     }
@@ -1865,19 +1865,19 @@ impl Panel for SubItemsPanel {
     }
 }
 
-impl Focusable for SubItemsPanel {
+impl Focusable for ResultDetailsPanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for SubItemsPanel {
+impl Render for ResultDetailsPanel {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div().size_full().child(self.table.clone())
     }
 }
 
-impl TableDelegate for SubItemsTableDelegate {
+impl TableDelegate for ResultDetailsTableDelegate {
     fn cols_count(&self, _: &App) -> usize {
         self.columns.len()
     }
