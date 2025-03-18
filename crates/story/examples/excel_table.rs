@@ -1188,21 +1188,21 @@ impl ResultTableDelegate {
             debug!("Table {} has {} rows", table, count);
         }
 
-        // 获取所有工作表并按类型分组
+        // 先获取所有的工作表，按原始顺序
         let mut sheets_stmt = conn.prepare(
             "SELECT id, name, 
-             -- Get the type from the first part of the sheet name before a space
+             /* Get the type from the first part of the sheet name before a space */
              CASE 
                 WHEN instr(name, ' ') > 0 THEN substr(name, 1, instr(name, ' ')-1)
                 ELSE name
              END as type,
-             -- Extract the specific name part (everything after the first space)
+             /* Extract the specific name part (everything after the first space) */
              CASE
                 WHEN instr(name, ' ') > 0 THEN substr(name, instr(name, ' ')+1)
                 ELSE ''
              END as short_name
              FROM sheets 
-             ORDER BY type, id"
+             ORDER BY id"
         )?;
 
         let sheets = sheets_stmt.query_map([], |row| {
@@ -1214,27 +1214,35 @@ impl ResultTableDelegate {
             ))
         })?;
 
-        let mut current_type = String::new();
-        let mut type_index = 1;
-
-        // Collect all sheet results
+        // 收集所有工作表，并按类型分组
         let mut sheet_results = Vec::new();
         for sheet_result in sheets {
             sheet_results.push(sheet_result?);
         }
-        
+
         debug!("Found {} sheets in database", sheet_results.len());
         if sheet_results.is_empty() {
             debug!("No sheets found in database. Check if data was imported correctly.");
             return Ok(());
         }
 
-        for (sheet_id, sheet_name, sheet_type, short_name) in sheet_results {
-            debug!("Processing sheet: {} (id: {}, type: {})", &sheet_name, sheet_id, &sheet_type);
-            
-            // 如果是新的工程类型，添加类型标题行
-            if current_type != sheet_type {
-                current_type = sheet_type.clone();
+        // 先按类型分组工作表，保持每组内的原始顺序
+        let mut sheet_groups: HashMap<String, Vec<(i64, String, String, String)>> = HashMap::new();
+        for sheet_info in sheet_results {
+            let sheet_type = sheet_info.2.clone();
+            sheet_groups.entry(sheet_type).or_default().push(sheet_info);
+        }
+
+        // 按字母顺序排序类型（可选，如果需要固定顺序）
+        let mut type_keys: Vec<String> = sheet_groups.keys().cloned().collect();
+        type_keys.sort();
+
+        let mut type_index = 1;
+
+        // 处理每个类型组
+        for type_key in type_keys {
+            if let Some(sheets_in_group) = sheet_groups.get(&type_key) {
+                // 添加类型标题行
                 self.total_rows.push(ResultRow {
                     序号: match type_index {
                         1 => "一".to_string(),
@@ -1244,7 +1252,7 @@ impl ResultTableDelegate {
                     },
                     编码: "".to_string(),
                     名称及规格: "".to_string(),
-                    项目名称: current_type.clone(),
+                    项目名称: type_key.clone(),
                     单位: "".to_string(),
                     可研估算: "".to_string(),
                     碳排放指数: "".to_string(),
@@ -1254,130 +1262,137 @@ impl ResultTableDelegate {
                     小计: "".to_string(),
                 });
                 type_index += 1;
-            }
+                
+                // 处理该类型下的每个工作表
+                let mut sub_index = 1;
+                for (sheet_id, sheet_name, _, short_name) in sheets_in_group {
+                    debug!("Processing sheet: {} (id: {}, type: {})", sheet_name, sheet_id, &type_key);
+                    
+                    // 检查该工作表是否有数据
+                    let data_count: i64 = conn.query_row(
+                        "SELECT COUNT(*) FROM excel_data WHERE sheet_id = ?",
+                        params![sheet_id],
+                        |row| row.get(0),
+                    )?;
+                    debug!("Sheet {} has {} data rows", &sheet_name, data_count);
+                    
+                    // 检查分类数据
+                    let category_count: Vec<(String, i64)> = {
+                        let mut stmt = conn.prepare(
+                            "SELECT category, COUNT(*) FROM excel_data 
+                             WHERE sheet_id = ? AND category IS NOT NULL 
+                             GROUP BY category"
+                        )?;
+                        let results = stmt.query_map(params![sheet_id], |row| {
+                            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                        })?;
+                        let mut counts = Vec::new();
+                        for result in results {
+                            counts.push(result?);
+                        }
+                        counts
+                    };
+                    
+                    for (category, count) in &category_count {
+                        debug!("Category '{}' has {} items", category, count);
+                    }
 
-            // 首先检查该工作表是否有数据
-            let data_count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM excel_data WHERE sheet_id = ?",
-                params![sheet_id],
-                |row| row.get(0),
-            )?;
-            debug!("Sheet {} has {} data rows", &sheet_name, data_count);
-            
-            // 检查分类数据
-            let category_count: Vec<(String, i64)> = {
-                let mut stmt = conn.prepare(
-                    "SELECT category, COUNT(*) FROM excel_data 
-                     WHERE sheet_id = ? AND category IS NOT NULL 
-                     GROUP BY category"
-                )?;
-                let results = stmt.query_map(params![sheet_id], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-                })?;
-                let mut counts = Vec::new();
-                for result in results {
-                    counts.push(result?);
+                    // 查询该工作表的分类汇总数据
+                    let mut stmt = conn.prepare(
+                        "WITH combined_data AS (
+                            SELECT 
+                                e.*,
+                                CASE 
+                                    WHEN e.编码 LIKE 'L%' THEN l.carbon_factor
+                                    WHEN e.编码 LIKE 'M%' THEN m.carbon_factor
+                                    WHEN e.编码 LIKE 'E%' THEN mc.carbon_factor
+                                    ELSE 1.0
+                                END as carbon_factor
+                            FROM excel_data e
+                            LEFT JOIN labor l ON substr(e.编码, 2) = l.code
+                            LEFT JOIN material m ON substr(e.编码, 2) = m.code
+                            LEFT JOIN machine mc ON substr(e.编码, 2) = mc.code
+                            WHERE e.sheet_id = ?
+                        )
+                        SELECT 
+                            category,
+                            SUM(CAST(NULLIF(数量,'') AS FLOAT) * carbon_factor) as total_emission
+                        FROM combined_data
+                        WHERE category IS NOT NULL AND 数量 != ''
+                        GROUP BY category"
+                    )?;
+
+                    let mut total_labor = 0.0;
+                    let mut total_material = 0.0;
+                    let mut total_machine = 0.0;
+                    let category_totals = stmt.query_map(params![sheet_id], |row| {
+                        let category: String = row.get(0)?;
+                        let total: f64 = row.get(1)?;
+                        debug!("Category: {}, Total: {}", &category, total);
+                        match category.as_str() {
+                            "labor" => total_labor = total,
+                            "material" => total_material = total,
+                            "machine" => total_machine = total,
+                            _ => (),
+                        }
+                        Ok(())
+                    })?;
+
+                    // 消费迭代器
+                    for result in category_totals {
+                        result?; // Process each result to ensure the query runs
+                    }
+
+                    debug!("Totals for sheet {}: Labor: {}, Material: {}, Machine: {}", 
+                           &sheet_name, total_labor, total_material, total_machine);
+
+                    let total_emission = total_labor + total_material + total_machine;
+
+                    // 添加工作表数据行，使用子类型的索引
+                    self.total_rows.push(ResultRow {
+                        序号: format!("{}", sub_index),  // 子索引从1开始
+                        编码: "".to_string(),
+                        名称及规格: "".to_string(),
+                        项目名称: short_name.trim().to_string(),
+                        单位: "m2".to_string(),
+                        可研估算: "用户填写".to_string(),  // 工程量，等待用户填写
+                        碳排放指数: format!("D{}*I{}", self.total_rows.len() + 1, self.total_rows.len() + 1),  // 总碳排放量公式
+                        人工: format!("{:.2}", total_labor),
+                        材料: format!("{:.2}", total_material),
+                        机械: format!("{:.2}", total_machine),
+                        小计: format!("{:.2}", total_emission),
+                    });
+                    sub_index += 1;
+                    
+                    // 加载子项目明细数据用于详情面板
+                    let mut sub_stmt = conn.prepare(
+                        "SELECT 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计, category
+                         FROM excel_data 
+                         WHERE sheet_id = ?
+                         AND (编码 IS NOT NULL OR 名称及规格 LIKE '%类别')
+                         ORDER BY id"
+                    )?;
+                    
+                    let sub_rows = sub_stmt.query_map(params![sheet_id], |row| {
+                        Ok(SubItemRow {
+                            序号: row.get(0)?,
+                            编码: row.get(1)?,
+                            名称及规格: row.get(2)?,
+                            单位: row.get(3)?,
+                            数量: row.get(4)?,
+                            市场价: row.get(5)?,
+                            合计: row.get(6)?,
+                            category: Category::from_string(&row.get::<_, String>(7).unwrap_or_default()),
+                        })
+                    })?;
+                    
+                    for sub_row in sub_rows {
+                        self.sub_rows.push(sub_row?);
+                    }
+                    
+                    debug!("Added {} sub items for sheet {}", self.sub_rows.len(), sheet_name);
                 }
-                counts
-            };
-            
-            for (category, count) in &category_count {
-                debug!("Category '{}' has {} items", category, count);
             }
-
-            // 查询该工作表的分类汇总数据
-            let mut stmt = conn.prepare(
-                "WITH combined_data AS (
-                    SELECT 
-                        e.*,
-                        CASE 
-                            WHEN e.编码 LIKE 'L%' THEN l.carbon_factor
-                            WHEN e.编码 LIKE 'M%' THEN m.carbon_factor
-                            WHEN e.编码 LIKE 'E%' THEN mc.carbon_factor
-                            ELSE 1.0
-                        END as carbon_factor
-                    FROM excel_data e
-                    LEFT JOIN labor l ON substr(e.编码, 2) = l.code
-                    LEFT JOIN material m ON substr(e.编码, 2) = m.code
-                    LEFT JOIN machine mc ON substr(e.编码, 2) = mc.code
-                    WHERE e.sheet_id = ?
-                )
-                SELECT 
-                    category,
-                    SUM(CAST(NULLIF(数量,'') AS FLOAT) * carbon_factor) as total_emission
-                FROM combined_data
-                WHERE category IS NOT NULL AND 数量 != ''
-                GROUP BY category"
-            )?;
-
-            let mut total_labor = 0.0;
-            let mut total_material = 0.0;
-            let mut total_machine = 0.0;
-            let category_totals = stmt.query_map(params![sheet_id], |row| {
-                let category: String = row.get(0)?;
-                let total: f64 = row.get(1)?;
-                debug!("Category: {}, Total: {}", &category, total);
-                match category.as_str() {
-                    "labor" => total_labor = total,
-                    "material" => total_material = total,
-                    "machine" => total_machine = total,
-                    _ => (),
-                }
-                Ok(())
-            })?;
-
-            // 消费迭代器
-            for result in category_totals {
-                result?; // Process each result to ensure the query runs
-            }
-
-            debug!("Totals for sheet {}: Labor: {}, Material: {}, Machine: {}", 
-                   &sheet_name, total_labor, total_material, total_machine);
-
-            let total_emission = total_labor + total_material + total_machine;
-
-            // 添加工作表数据行
-            self.total_rows.push(ResultRow {
-                序号: format!("{}", self.total_rows.len() + 1),
-                编码: "".to_string(),
-                名称及规格: "".to_string(),
-                项目名称: short_name.trim().to_string(),
-                单位: "m2".to_string(),
-                可研估算: "用户填写".to_string(),  // 工程量，等待用户填写
-                碳排放指数: format!("D{}*I{}", self.total_rows.len() + 1, self.total_rows.len() + 1),  // 总碳排放量公式
-                人工: format!("{:.2}", total_labor),
-                材料: format!("{:.2}", total_material),
-                机械: format!("{:.2}", total_machine),
-                小计: format!("{:.2}", total_emission),
-            });
-
-            // 加载子项目明细数据用于详情面板
-            let mut sub_stmt = conn.prepare(
-                "SELECT 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计, category
-                 FROM excel_data 
-                 WHERE sheet_id = ?
-                 AND (编码 IS NOT NULL OR 名称及规格 LIKE '%类别')
-                 ORDER BY id"
-            )?;
-            
-            let sub_rows = sub_stmt.query_map(params![sheet_id], |row| {
-                Ok(SubItemRow {
-                    序号: row.get(0)?,
-                    编码: row.get(1)?,
-                    名称及规格: row.get(2)?,
-                    单位: row.get(3)?,
-                    数量: row.get(4)?,
-                    市场价: row.get(5)?,
-                    合计: row.get(6)?,
-                    category: Category::from_string(&row.get::<_, String>(7).unwrap_or_default()),
-                })
-            })?;
-            
-            for sub_row in sub_rows {
-                self.sub_rows.push(sub_row?);
-            }
-            
-            debug!("Added {} sub items for sheet {}", self.sub_rows.len(), &sheet_name);
         }
 
         debug!("Final results: {} total rows, {} sub rows", self.total_rows.len(), self.sub_rows.len());
