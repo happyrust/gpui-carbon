@@ -6,3 +6,4 @@ index.scip
 data/excel_data.db
 data/indicator_data.db
 crates/story/data/indicator_data.db
+logs/excel_table.log

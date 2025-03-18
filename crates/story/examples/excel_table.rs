@@ -1,12 +1,10 @@
 use calamine::{open_workbook, Reader, Xlsx};
 use fake::faker::name;
 use gpui::{
-    div, hsla, impl_actions, px, App, AppContext, Application, BorrowAppContext, Context, Edges,
-    Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
-    Pixels, Point, Render, SharedString, Size as GpuiSize, Styled, Subscription, Window,
+    div, hsla, impl_actions, px, App, AppContext, Application, BorrowAppContext, Context, Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, Render, SharedString, Size as GpuiSize, Styled, Subscription, Window
 };
 use gpui_component::{
-    button::Button, dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView}, dropdown::{Dropdown, DropdownEvent}, h_flex, input::{InputEvent, TextInput}, label::Label, notification::{Notification, NotificationType}, popup_menu::PopupMenuExt, scroll::ScrollbarShow, table::{self, Table, TableDelegate, TableEvent}, v_flex, ContextModal, Sizable, Size, Theme
+    button::{Button, ButtonVariant, ButtonVariants}, dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView}, dropdown::{Dropdown, DropdownEvent}, h_flex, input::{InputEvent, TextInput}, label::Label, notification::{Notification, NotificationType}, popup_menu::PopupMenuExt, scroll::ScrollbarShow, table::{self, Table, TableDelegate, TableEvent}, v_flex, ContextModal, Sizable, Size, Theme
 };
 use log::{debug, error, info, LevelFilter};
 use log4rs::{
@@ -1192,7 +1190,6 @@ impl ResultTableDelegate {
             "单位".to_string(),
             "工程量".to_string(),  // 改名：可研估算 -> 工程量
             "总碳排放量".to_string(),  // 改名：碳排放指数 -> 总碳排放量
-            "主要人材机耗量".to_string(),  // 新增列
             "人工".to_string(),
             "材料".to_string(),
             "机械".to_string(),
@@ -1291,7 +1288,7 @@ impl ResultTableDelegate {
                     项目名称: type_key.clone(),
                     单位: "".to_string(),
                     可研估算: "".to_string(),
-                    碳排放指数: "".to_string(),
+                    碳排放指数: "".to_string(),  // 总碳排放量，将在渲染时计算
                     人工: "".to_string(),
                     材料: "".to_string(),
                     机械: "".to_string(),
@@ -1391,8 +1388,8 @@ impl ResultTableDelegate {
                         名称及规格: "".to_string(),
                         项目名称: short_name.trim().to_string(),
                         单位: "m2".to_string(),
-                        可研估算: "用户填写".to_string(),  // 工程量，等待用户填写
-                        碳排放指数: format!("D{}*I{}", self.total_rows.len() + 1, self.total_rows.len() + 1),  // 总碳排放量公式
+                        可研估算: "右键编辑".to_string(),  // 工程量，等待右键编辑
+                        碳排放指数: "".to_string(),  // 总碳排放量，将在渲染时计算
                         人工: format!("{:.2}", total_labor),
                         材料: format!("{:.2}", total_material),
                         机械: format!("{:.2}", total_machine),
@@ -1457,11 +1454,10 @@ impl TableDelegate for ResultTableDelegate {
             2 => px(60.0),    // 单位 - 固定窄宽度
             3 => px(100.0),   // 工程量 - 中等宽度
             4 => px(120.0),   // 总碳排放量 - 稍宽，包含数字和公式
-            5 => px(120.0),   // 主要人材机耗量 - 较宽
-            6 => px(90.0),    // 人工 - 数值列
-            7 => px(90.0),    // 材料 - 数值列
-            8 => px(90.0),    // 机械 - 数值列
-            9 => px(90.0),    // 小计 - 数值列
+            5 => px(90.0),    // 人工 - 数值列
+            6 => px(90.0),    // 材料 - 数值列
+            7 => px(90.0),    // 机械 - 数值列
+            8 => px(90.0),    // 小计 - 数值列
             _ => px(80.0),    // 默认宽度
         }
     }
@@ -1500,68 +1496,32 @@ impl TableDelegate for ResultTableDelegate {
         // 2. Any field other than 序号 and 项目名称 is empty
         let is_category_row = !row.项目名称.contains(' ') && row.单位.is_empty() && row.碳排放指数.is_empty();
         
-        // 如果是"工程量"列(col_ix=3)且不是类别行，则显示可编辑输入框
-        if col_ix == 3 && !is_category_row {
-            // 获取当前值
-            let current_value = row.可研估算.clone();
-            
-            // 创建文本输入框
-            let input = cx.new(|ctx| {
-                let mut text_input = TextInput::new(window, ctx);
-                text_input.set_size(Size::Medium, window, ctx);
-                text_input.set_text(current_value, window, ctx);
-                text_input
-            });
-            
-            // 创建一个捕获行索引的闭包用于更新
-            let table = cx.entity();
-            let row_index = row_ix;
-            
-            // 订阅输入事件 
-            cx.subscribe_in(&input, window, move |_: &mut Table<ResultTableDelegate>, 
-                                                 input: &Entity<TextInput>, 
-                                                 event: &InputEvent,
-                                                 window: &mut Window,
-                                                 ctx: &mut Context<Table<ResultTableDelegate>>| {
-                match event {
-                    InputEvent::PressEnter | InputEvent::Blur => {
-                        // 获取输入的文本
-                        let value = input.read(ctx).text();
-                        
-                        // 更新表格数据
-                        table.update(ctx, |table, update_ctx| {
-                            // 获取可变委托引用
-                            if let Some(row) = table.delegate_mut().total_rows.get_mut(row_index) {
-                                // 更新工程量值
-                                row.可研估算 = value.to_string();
-                                
-                                // 刷新表格
-                                table.refresh(update_ctx);
-                            }
-                        });
-                    },
-                    _ => {},
-                }
-            });
-            
-            return div()
-                .flex()
-                .justify_end() // 右对齐
-                .size_full()
-                .child(input);
-        }
-        
         let value = match col_ix {
             0 => row.序号.clone(),
             1 => row.项目名称.clone(), // Already correctly formatted from the SQL query
             2 => if is_category_row { String::new() } else { row.单位.clone() },
             3 => if is_category_row { String::new() } else { row.可研估算.clone() },
-            4 => if is_category_row { String::new() } else { row.碳排放指数.clone() },
-            5 => if is_category_row { String::new() } else { String::new() }, // 主要人材机耗量列留空
-            6 => if is_category_row { String::new() } else { row.人工.clone() },
-            7 => if is_category_row { String::new() } else { row.材料.clone() },
-            8 => if is_category_row { String::new() } else { row.机械.clone() },
-            9 => if is_category_row { String::new() } else { row.小计.clone() },
+            4 => if is_category_row { 
+                String::new() 
+            } else { 
+                // 计算总碳排放量 = 工程量 * 小计
+                if row.可研估算.is_empty() || row.可研估算 == "右键编辑" {
+                    "-".to_string() // 显示横线表示没有数据
+                } else {
+                    // 尝试解析工程量和小计
+                    match (row.可研估算.parse::<f64>(), row.小计.parse::<f64>()) {
+                        (Ok(工程量), Ok(小计)) => {
+                            let 总碳排放量 = 工程量 * 小计;
+                            format!("{:.2}", 总碳排放量)
+                        },
+                        _ => "-".to_string() // 如果解析失败，显示横线
+                    }
+                }
+            },
+            5 => if is_category_row { String::new() } else { row.人工.clone() },
+            6 => if is_category_row { String::new() } else { row.材料.clone() },
+            7 => if is_category_row { String::new() } else { row.机械.clone() },
+            8 => if is_category_row { String::new() } else { row.小计.clone() },
             _ => String::new(),
         };
 
@@ -1581,6 +1541,125 @@ impl TableDelegate for ResultTableDelegate {
         // 为类别行应用特殊样式
         if is_category_row {
             element = element.font_weight(gpui::FontWeight::BOLD); // 加粗类别行
+        }
+        
+        // 添加特殊处理：仅对工程量列（col_ix=3）且非类别行添加右键点击事件来触发弹出输入框
+        if col_ix == 3 && !is_category_row {
+            let table = cx.entity().clone();
+            let row_ix = row_ix;
+            let project_name = row.项目名称.clone(); // 获取项目名称用于弹窗标题
+            
+            element = element.on_mouse_down(MouseButton::Right, move |_, window, cx| {
+                // 创建一个新的输入框用于弹窗，初始值为空
+                let input_entity = cx.new(|ctx| {
+                    let mut text_input = TextInput::new(window, ctx);
+                    text_input.set_size(Size::Medium, window, ctx);
+                    text_input.set_text("", window, ctx); // 设置为空字符串
+                    
+                    // 使用validate方法验证输入是数字
+                    text_input.validate(|text| {
+                        if text.is_empty() {
+                            return true; // 允许为空
+                        }
+                        // 验证是否为有效数字
+                        text.parse::<f64>().is_ok()
+                    })
+                });
+                
+                // 设置焦点到输入框
+                input_entity.update(cx, |input, ctx| {
+                    input.focus(window, ctx);
+                });
+                
+                // 在闭包中提前克隆需要的值
+                let table_for_modal = table.clone();
+                let row_index = row_ix;
+                let project_name_for_modal = project_name.clone();
+                
+                // 打开弹窗
+                window.open_modal(cx, move |modal, _window, _cx| {
+                    let input_clone = input_entity.clone();
+                    let table_for_ok = table_for_modal.clone(); // 克隆一次表格实体用于 on_ok 闭包
+                    
+                    modal
+                        .title(format!("编辑「{}」的工程量", project_name_for_modal))
+                        .width(px(300.))
+                        .child(
+                            v_flex()
+                                .gap_4()
+                                .p_2()
+                                .child(Label::new("请输入工程量(数字):"))
+                                .child(
+                                    h_flex()
+                                        .gap_2()
+                                        .w_full()
+                                        .items_center()
+                                        .child(div().flex_grow().child(input_entity.clone()))
+                                        .child(
+                                            Button::new("confirm")
+                                                .label("确定")
+                                                .with_variant(ButtonVariant::Primary)
+                                                .on_click({
+                                                    let input_clone = input_entity.clone(); 
+                                                    let table_for_ok = table_for_ok.clone();
+                                                    let row_index = row_index;
+                                                    
+                                                    move |_event, window, cx: &mut App| {
+                                                        // 获取输入值并更新表格数据
+                                                        let new_value = input_clone.read(cx).text();
+                                                        
+                                                        // 验证输入是否为有效数字
+                                                        if new_value.is_empty() || new_value.parse::<f64>().is_ok() {
+                                                            table_for_ok.update(cx, |table, cx| {
+                                                                if let Some(row) = table.delegate_mut().total_rows.get_mut(row_index) {
+                                                                    row.可研估算 = new_value.to_string();
+                                                                }
+                                                                table.refresh(cx);
+                                                            });
+                                                            
+                                                            // 关闭弹窗
+                                                            window.close_modal(cx);
+                                                        } else {
+                                                            // 显示错误提示
+                                                            window.push_notification(
+                                                                Notification::new("请输入有效的数字")
+                                                                    .with_type(NotificationType::Error),
+                                                                cx,
+                                                            );
+                                                        }
+                                                    }
+                                                })
+                                        )
+                                )
+                        )
+                        .on_ok(move |_, window, cx: &mut App| {
+                            // 获取输入值并更新表格数据
+                            let new_value = input_clone.read(cx).text();
+                            
+                            // 验证输入是否为有效数字 (虽然已经在TextInput中验证了，但这里再次验证确保安全)
+                            if new_value.is_empty() || new_value.parse::<f64>().is_ok() {
+                                table_for_ok.update(cx, |table, cx| {
+                                    if let Some(row) = table.delegate_mut().total_rows.get_mut(row_index) {
+                                        row.可研估算 = new_value.to_string();
+                                    }
+                                    table.refresh(cx);
+                                });
+                                true // 返回true表示操作成功，关闭弹窗
+                            } else {
+                                // 显示错误提示
+                                window.push_notification(
+                                    Notification::new("请输入有效的数字")
+                                        .with_type(NotificationType::Error),
+                                    cx,
+                                );
+                                false // 返回false表示操作失败，不关闭弹窗
+                            }
+                        })
+                        .on_cancel(|_, _, _| true) // 取消时关闭弹窗
+                });
+                
+                cx.stop_propagation();
+            });
         }
         
         element.child(value)
