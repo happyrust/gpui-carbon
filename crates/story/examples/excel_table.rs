@@ -6,16 +6,7 @@ use gpui::{
     Pixels, Render, SharedString, Size, Styled, Subscription, Window,
 };
 use gpui_component::{
-    button::Button,
-    dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView},
-    dropdown::{Dropdown, DropdownEvent},
-    h_flex,
-    input::TextInput,
-    label::Label,
-    notification::{Notification, NotificationType},
-    popup_menu::PopupMenuExt,
-    table::{self, Table, TableDelegate, TableEvent},
-    v_flex, ContextModal, Sizable,
+    button::Button, dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView}, dropdown::{Dropdown, DropdownEvent}, h_flex, input::TextInput, label::Label, notification::{Notification, NotificationType}, popup_menu::PopupMenuExt, scroll::ScrollbarShow, table::{self, Table, TableDelegate, TableEvent}, v_flex, ContextModal, Sizable, Theme
 };
 use rusqlite::{params, Connection, Result as SqliteResult};
 use schemars::JsonSchema;
@@ -696,10 +687,13 @@ impl IndicatorStory {
                             }
 
                             window.push_notification(
-                                Notification::new("Excel 数据已成功导入到数据库")
+                                Notification::new("指标数据已成功导入到数据库")
                                     .with_type(NotificationType::Success),
                                 cx,
                             );
+
+                            // 直接触发结果表更新
+                            cx.emit(UpdateResultTable);
                         } else {
                             window.push_notification(
                                 Notification::new("未找到任何有效的工作表数据")
@@ -985,7 +979,7 @@ impl Render for ParamFormPane {
                                                                         );
                                                                     },
                                                                 );
-                                                            });
+                                                            }).unwrap();
                                                         }
                                                     })
                                                     .detach();
@@ -1159,8 +1153,9 @@ impl ResultTableDelegate {
             "序号".to_string(),
             "项目名称".to_string(),
             "单位".to_string(),
-            "可研估算".to_string(),
-            "碳排放指数".to_string(),
+            "工程量".to_string(),  // 改名：可研估算 -> 工程量
+            "总碳排放量".to_string(),  // 改名：碳排放指数 -> 总碳排放量
+            "主要人材机耗量".to_string(),  // 新增列
             "人工".to_string(),
             "材料".to_string(),
             "机械".to_string(),
@@ -1175,58 +1170,125 @@ impl ResultTableDelegate {
     }
 
     fn update_data(&mut self, db_path: &str) -> SqliteResult<()> {
-        // 清空现有数据
         self.total_rows.clear();
         self.sub_rows.clear();
 
         let conn = Connection::open(db_path)?;
 
-        // 获取所有工作表
-        let mut sheets_stmt = conn.prepare("SELECT id, name FROM sheets ORDER BY id")?;
+        // 获取所有工作表并按类型分组
+        let mut sheets_stmt = conn.prepare(
+            "SELECT id, name, 
+             CASE 
+                WHEN name LIKE '%道路工程%' THEN '道路工程'
+                WHEN name LIKE '%交通工程%' THEN '交通工程'
+                ELSE '其他'
+             END as type
+             FROM sheets 
+             ORDER BY type, id"
+        )?;
+
         let sheets = sheets_stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?
+            ))
         })?;
 
+        let mut current_type = String::new();
+        let mut type_index = 1;
+
         for sheet_result in sheets {
-            let (sheet_id, sheet_name) = sheet_result?;
+            let (sheet_id, sheet_name, sheet_type) = sheet_result?;
             
-            // 为每个工作表收集数据
+            // 如果是新的工程类型，添加类型标题行
+            if current_type != sheet_type {
+                current_type = sheet_type.clone();
+                self.total_rows.push(ResultRow {
+                    序号: match type_index {
+                        1 => "一".to_string(),
+                        2 => "二".to_string(),
+                        3 => "三".to_string(),
+                        _ => format!("{}", type_index),
+                    },
+                    编码: "".to_string(),
+                    名称及规格: "".to_string(),
+                    项目名称: current_type.clone(),
+                    单位: "".to_string(),
+                    可研估算: "".to_string(),
+                    碳排放指数: "".to_string(),
+                    人工: "".to_string(),
+                    材料: "".to_string(),
+                    机械: "".to_string(),
+                    小计: "".to_string(),
+                });
+                type_index += 1;
+            }
+
+            // 查询该工作表的分类汇总数据
+            let mut stmt = conn.prepare(
+                "WITH combined_data AS (
+                    SELECT 
+                        e.*,
+                        CASE 
+                            WHEN e.编码 LIKE 'L%' THEN l.carbon_factor
+                            WHEN e.编码 LIKE 'M%' THEN m.carbon_factor
+                            WHEN e.编码 LIKE 'E%' THEN mc.carbon_factor
+                            ELSE 1.0
+                        END as carbon_factor,
+                        CASE
+                            WHEN e.category = 'labor' THEN '人工类别'
+                            WHEN e.category = 'material' THEN '材料类别'
+                            WHEN e.category = 'machine' THEN '机械类别'
+                            ELSE ''
+                        END as category_name
+                    FROM excel_data e
+                    LEFT JOIN labor l ON e.编码 = l.code
+                    LEFT JOIN material m ON e.编码 = m.code
+                    LEFT JOIN machine mc ON e.编码 = mc.code
+                    WHERE e.sheet_id = ?
+                )
+                SELECT 
+                    category_name,
+                    SUM(CAST(数量 AS FLOAT) * carbon_factor) as total_emission
+                FROM combined_data
+                WHERE category_name != ''
+                GROUP BY category_name"
+            )?;
+
             let mut total_labor = 0.0;
             let mut total_material = 0.0;
             let mut total_machine = 0.0;
-            let mut total_research = 0.0;
+            let mut category_totals = stmt.query_map([sheet_id], |row| {
+                let category_name: String = row.get(0)?;
+                let total: f64 = row.get(1)?;
+                match category_name.as_str() {
+                    "人工类别" => total_labor = total,
+                    "材料类别" => total_material = total,
+                    "机械类别" => total_machine = total,
+                    _ => (),
+                }
+                Ok(())
+            })?;
 
-            // ... 查询和处理数据的代码保持不变 ...
+            // 消费迭代器
+            while let Some(_) = category_totals.next() {}
 
-            // 添加工作表标题行
+            let total_emission = total_labor + total_material + total_machine;
+
+            // 添加工作表数据行
             self.total_rows.push(ResultRow {
                 序号: format!("{}", self.total_rows.len() + 1),
                 编码: "".to_string(),
                 名称及规格: "".to_string(),
                 项目名称: sheet_name.clone(),
-                单位: "".to_string(),
-                可研估算: "".to_string(),
-                碳排放指数: "".to_string(),
-                人工: "".to_string(),
-                材料: "".to_string(),
-                机械: "".to_string(),
-                小计: "".to_string(),
-            });
-
-            // 添加汇总数据行
-            let total_emission = total_labor + total_material + total_machine;
-            self.total_rows.push(ResultRow {
-                序号: format!("{}.1", self.total_rows.len()),
-                编码: "".to_string(),
-                名称及规格: "汇总数据".to_string(),
-                项目名称: "汇总数据".to_string(),
                 单位: "m2".to_string(),
-                可研估算: format!("{:.2}", total_research),
-                碳排放指数: format!("{:.2}", if total_research > 0.0 { total_emission / total_research } else { 0.0 }),
-                人工: format!("{:.4}", total_labor),
-                材料: format!("{:.4}", total_material),
-                机械: format!("{:.4}", total_machine),
-                小计: format!("{:.4}", total_emission),
+                可研估算: "用户填写".to_string(),  // 工程量，等待用户填写
+                碳排放指数: format!("D{}*I{}", self.total_rows.len() + 1, self.total_rows.len() + 1),  // 总碳排放量公式
+                人工: format!("{:.2}", total_labor),
+                材料: format!("{:.2}", total_material),
+                机械: format!("{:.2}", total_machine),
+                小计: format!("{:.2}", total_emission),
             });
         }
 
@@ -1278,10 +1340,11 @@ impl TableDelegate for ResultTableDelegate {
             2 => row.单位.clone(),
             3 => row.可研估算.clone(),
             4 => row.碳排放指数.clone(),
-            5 => row.人工.clone(),
-            6 => row.材料.clone(),
-            7 => row.机械.clone(),
-            8 => row.小计.clone(),
+            5 => "".to_string(),  // 主要人材机耗量列留空
+            6 => row.人工.clone(),
+            7 => row.材料.clone(),
+            8 => row.机械.clone(),
+            9 => row.小计.clone(),
             _ => String::new(),
         };
 
