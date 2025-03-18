@@ -1,0 +1,7 @@
+2025-03-18T23:45:00.755307+08:00 - INFO - Starting Excel Table application
+2025-03-18T23:45:01.033840+08:00 - DEBUG - no tokio runtime found, creating one for Reqwest...
+2025-03-18T23:45:01.037782+08:00 - INFO - Application window created
+2025-03-18T23:45:01.145247+08:00 - DEBUG - glob converted to regex: Glob { glob: "fonts/**/*", re: "(?-u)^fonts(?:/|/.*/).*$", opts: GlobOptions { case_insensitive: false, literal_separator: false, backslash_escape: true, empty_alternates: false }, tokens: Tokens([Literal('f'), Literal('o'), Literal('n'), Literal('t'), Literal('s'), RecursiveZeroOrMore, ZeroOrMore]) }
+2025-03-18T23:45:01.145291+08:00 - DEBUG - glob converted to regex: Glob { glob: "icons/**/*", re: "(?-u)^icons(?:/|/.*/).*$", opts: GlobOptions { case_insensitive: false, literal_separator: false, backslash_escape: true, empty_alternates: false }, tokens: Tokens([Literal('i'), Literal('c'), Literal('o'), Literal('n'), Literal('s'), RecursiveZeroOrMore, ZeroOrMore]) }
+2025-03-18T23:45:01.145301+08:00 - DEBUG - built glob set; 0 literals, 0 basenames, 0 extensions, 0 prefixes, 0 suffixes, 0 required extensions, 2 regexes
+2025-03-18T23:45:01.146345+08:00 - DEBUG - built glob set; 0 literals, 0 basenames, 1 extensions, 0 prefixes, 0 suffixes, 0 required extensions, 0 regexes

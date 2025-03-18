@@ -3,10 +3,10 @@ use fake::faker::name;
 use gpui::{
     div, hsla, impl_actions, px, App, AppContext, Application, BorrowAppContext, Context, Edges,
     Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
-    Pixels, Render, SharedString, Size, Styled, Subscription, Window,
+    Pixels, Point, Render, SharedString, Size as GpuiSize, Styled, Subscription, Window,
 };
 use gpui_component::{
-    button::Button, dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView}, dropdown::{Dropdown, DropdownEvent}, h_flex, input::TextInput, label::Label, notification::{Notification, NotificationType}, popup_menu::PopupMenuExt, scroll::ScrollbarShow, table::{self, Table, TableDelegate, TableEvent}, v_flex, ContextModal, Sizable, Theme
+    button::Button, dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView}, dropdown::{Dropdown, DropdownEvent}, h_flex, input::{InputEvent, TextInput}, label::Label, notification::{Notification, NotificationType}, popup_menu::PopupMenuExt, scroll::ScrollbarShow, table::{self, Table, TableDelegate, TableEvent}, v_flex, ContextModal, Sizable, Size, Theme
 };
 use log::{debug, error, info, LevelFilter};
 use log4rs::{
@@ -105,7 +105,7 @@ impl_actions!(
 struct IndicatorTableDelegate {
     rows: Vec<IndicatorRow>,
     columns: Vec<String>,
-    size: Size<Pixels>,
+    size: GpuiSize<Pixels>,
     loop_selection: bool,
     col_resize: bool,
     col_order: bool,
@@ -124,7 +124,7 @@ impl IndicatorTableDelegate {
         Self {
             rows: Vec::new(),
             columns: Vec::new(),
-            size: Size::default(),
+            size: GpuiSize::default(),
             loop_selection: true,
             col_resize: true,
             col_order: true,
@@ -1489,8 +1489,8 @@ impl TableDelegate for ResultTableDelegate {
         &self,
         row_ix: usize,
         col_ix: usize,
-        _: &mut Window,
-        _: &mut Context<Table<Self>>,
+        window: &mut Window,
+        cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
         let row = &self.total_rows[row_ix];
         
@@ -1499,6 +1499,57 @@ impl TableDelegate for ResultTableDelegate {
         // 1. The name doesn't contain spaces (single word)
         // 2. Any field other than 序号 and 项目名称 is empty
         let is_category_row = !row.项目名称.contains(' ') && row.单位.is_empty() && row.碳排放指数.is_empty();
+        
+        // 如果是"工程量"列(col_ix=3)且不是类别行，则显示可编辑输入框
+        if col_ix == 3 && !is_category_row {
+            // 获取当前值
+            let current_value = row.可研估算.clone();
+            
+            // 创建文本输入框
+            let input = cx.new(|ctx| {
+                let mut text_input = TextInput::new(window, ctx);
+                text_input.set_size(Size::Medium, window, ctx);
+                text_input.set_text(current_value, window, ctx);
+                text_input
+            });
+            
+            // 创建一个捕获行索引的闭包用于更新
+            let table = cx.entity();
+            let row_index = row_ix;
+            
+            // 订阅输入事件 
+            cx.subscribe_in(&input, window, move |_: &mut Table<ResultTableDelegate>, 
+                                                 input: &Entity<TextInput>, 
+                                                 event: &InputEvent,
+                                                 window: &mut Window,
+                                                 ctx: &mut Context<Table<ResultTableDelegate>>| {
+                match event {
+                    InputEvent::PressEnter | InputEvent::Blur => {
+                        // 获取输入的文本
+                        let value = input.read(ctx).text();
+                        
+                        // 更新表格数据
+                        table.update(ctx, |table, update_ctx| {
+                            // 获取可变委托引用
+                            if let Some(row) = table.delegate_mut().total_rows.get_mut(row_index) {
+                                // 更新工程量值
+                                row.可研估算 = value.to_string();
+                                
+                                // 刷新表格
+                                table.refresh(update_ctx);
+                            }
+                        });
+                    },
+                    _ => {},
+                }
+            });
+            
+            return div()
+                .flex()
+                .justify_end() // 右对齐
+                .size_full()
+                .child(input);
+        }
         
         let value = match col_ix {
             0 => row.序号.clone(),
@@ -1899,11 +1950,11 @@ impl CarbonResultPanel {
                         });
                         
                         // Show the panel if it was previously hidden
-                        window.push_notification(
-                            Notification::new(format!("已显示工作表 {} 的子项目详情", sheet_name))
-                                .with_type(NotificationType::Info),
-                            cx,
-                        );
+                        // window.push_notification(
+                        //     Notification::new(format!("已显示工作表 {} 的子项目详情", sheet_name))
+                        //         .with_type(NotificationType::Info),
+                        //     cx,
+                        // );
                     },
                     None => {
                         debug!("No matching sheet found for {}", sheet_name);
