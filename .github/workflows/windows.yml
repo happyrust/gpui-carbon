@@ -57,7 +57,7 @@ jobs:
       shell: bash
         
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v2  # 修改为 v2 版本
       with:
         name: excel-table-windows-${{ steps.date.outputs.date }}
         path: release/
@@ -101,4 +101,4 @@ jobs:
       with:
         files: release/*
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
