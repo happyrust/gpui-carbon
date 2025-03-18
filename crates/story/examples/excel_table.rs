@@ -622,6 +622,10 @@ impl ExcelStory {
                         // Start transaction
                         let tx = conn.transaction().unwrap();
 
+                        // Clear existing data before importing new data
+                        tx.execute("DELETE FROM excel_data", []).unwrap();
+                        tx.execute("DELETE FROM sheets", []).unwrap();
+
                         let mut success = false;
 
                         for sheet_name in &sheet_names {
@@ -644,23 +648,6 @@ impl ExcelStory {
                                             header_columns.values().any(|col| col == required_col)
                                         })
                                     }) {
-                                        // Delete existing sheet data
-                                        if let Ok(sheet_id) = tx.query_row(
-                                            "SELECT id FROM sheets WHERE name = ?",
-                                            params![sheet_name],
-                                            |row| row.get::<_, i64>(0)
-                                        ) {
-                                            dbg!("Deleting existing data for sheet:", sheet_name);
-                                            tx.execute(
-                                                "DELETE FROM excel_data WHERE sheet_id = ?",
-                                                params![sheet_id],
-                                            );
-                                            tx.execute(
-                                                "DELETE FROM sheets WHERE id = ?",
-                                                params![sheet_id],
-                                            );
-                                        }
-
                                         // Insert or update sheet
                                         tx.execute(
                                             "INSERT INTO sheets (name) VALUES (?)",
