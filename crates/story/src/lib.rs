@@ -2,6 +2,7 @@ mod accordion_story;
 mod assets;
 mod button_story;
 mod calendar_story;
+mod debug;
 mod dropdown_story;
 mod form_story;
 mod icon_story;
@@ -24,6 +25,7 @@ mod tooltip_story;
 mod webview_story;
 
 pub use assets::Assets;
+pub use debug::*;
 
 pub use accordion_story::AccordionStory;
 pub use button_story::ButtonStory;

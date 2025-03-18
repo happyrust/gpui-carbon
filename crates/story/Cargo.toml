@@ -4,6 +4,10 @@ name = "story"
 publish = false
 version = "0.1.0"
 
+[features]
+default = []
+debug = []
+
 [dependencies]
 anyhow.workspace = true
 charts-rs = "0.3"
