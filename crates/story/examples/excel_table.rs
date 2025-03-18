@@ -838,6 +838,7 @@ impl IndicatorStory {
                         }
                     }
                     Err(e) => {
+                        debug!("Error connecting to database: {}", &e);
                         window.push_notification(
                             Notification::new(format!("数据库连接失败: {}", e))
                                 .with_type(NotificationType::Error),
@@ -1222,8 +1223,8 @@ impl ResultTableDelegate {
             return Ok(());
         }
 
-        for (sheet_id, sheet_name, sheet_type) in sheet_results {
-            debug!("Processing sheet: {} (id: {}, type: {})", sheet_name, sheet_id, sheet_type);
+        for (sheet_id, mut sheet_name, mut sheet_type) in sheet_results {
+            debug!("Processing sheet: {} (id: {}, type: {})", &sheet_name, sheet_id, &sheet_type);
             
             // 如果是新的工程类型，添加类型标题行
             if current_type != sheet_type {
@@ -1255,7 +1256,7 @@ impl ResultTableDelegate {
                 params![sheet_id],
                 |row| row.get(0),
             )?;
-            debug!("Sheet {} has {} data rows", sheet_name, data_count);
+            debug!("Sheet {} has {} data rows", &sheet_name, data_count);
             
             // 检查分类数据
             let category_count: Vec<(String, i64)> = {
@@ -1309,7 +1310,7 @@ impl ResultTableDelegate {
             let category_totals = stmt.query_map(params![sheet_id], |row| {
                 let category: String = row.get(0)?;
                 let total: f64 = row.get(1)?;
-                debug!("Category: {}, Total: {}", category, total);
+                debug!("Category: {}, Total: {}", &category, total);
                 match category.as_str() {
                     "labor" => total_labor = total,
                     "material" => total_material = total,
@@ -1325,7 +1326,7 @@ impl ResultTableDelegate {
             }
 
             debug!("Totals for sheet {}: Labor: {}, Material: {}, Machine: {}", 
-                   sheet_name, total_labor, total_material, total_machine);
+                   &sheet_name, total_labor, total_material, total_machine);
 
             let total_emission = total_labor + total_material + total_machine;
 
@@ -1370,7 +1371,7 @@ impl ResultTableDelegate {
                 self.sub_rows.push(sub_row?);
             }
             
-            debug!("Added {} sub items for sheet {}", self.sub_rows.len(), sheet_name);
+            debug!("Added {} sub items for sheet {}", self.sub_rows.len(), &sheet_name);
         }
 
         debug!("Final results: {} total rows, {} sub rows", self.total_rows.len(), self.sub_rows.len());
@@ -1499,34 +1500,37 @@ impl CarbonResultPanel {
                       window: &mut Window,
                       cx: &mut Context<CarbonResultPanel>| {
                     if let TableEvent::SelectRow(row_ix) = event {
-                        debug!("Row selected:", row_ix); // 调试信息
-                        if *row_ix == 1 {
-                            // 当选中第二行时
+                        debug!("Row selected: {}", row_ix); // 调试信息
+                        
+                        // 忽略类型标题行，它们的项目名称是工程类型名称
+                        if let Some(row) = this.table.read(cx).delegate().total_rows.get(*row_ix) {
+                            debug!("Selected row project name: {}", &row.项目名称);
+                            
+                            // 如果是工程类型行（通常项目名称是"道路工程"、"交通工程"等），不显示子项
+                            if row.项目名称 == "道路工程" || row.项目名称 == "交通工程" || row.项目名称 == "其他" {
+                                debug!("Skipping category row");
+                                return;
+                            }
+                            
                             let story_data = story.read(cx); // 读取故事数据
                             let dock_area = story_data.dock_area.clone(); // 克隆停靠区域
+                            let sheet_name = row.项目名称.clone(); // 获取选中行的工作表名称
                             drop(story_data); // 释放故事数据
 
-                            // 如果子项目面板不存在则创建
+                            // 过滤子项目数据 - 目前所有子项目都在sub_rows中，但实际需要按工作表筛选
+                            // 这里先创建面板，之后再通过数据库查询获取该工作表的详细数据
+                            debug!("Showing sub items for sheet: {}", &sheet_name);
+                            
                             if this.sub_items_panel.is_none() {
-                                debug!("Creating new sub items panel"); // 调试信息
+                                debug!("Creating new sub items panel");
                                 // 创建子项目面板
-                                let delegate = ResultDetailsTableDelegate::new(); // 创建子项目表委托
-                                let table = cx.new(|cx| Table::new(delegate, window, cx)); // 创建新表格
+                                let delegate = ResultDetailsTableDelegate::new();
+                                let table = cx.new(|cx| Table::new(delegate, window, cx));
                                 let sub_items_panel = cx.new(|cx| ResultDetailsPanel {
                                     table,
                                     focus_handle: cx.focus_handle(),
                                 });
-
-                                // 设置子行数据
-                                let table_data = this.table.read(cx).delegate().clone(); // 克隆表格数据
-                                debug!("Number of sub rows to display:", table_data.sub_rows.len()); // 调试信息
-                                sub_items_panel.update(cx, |panel, cx| {
-                                    panel.table.update(cx, |table, cx| {
-                                        table.delegate_mut().set_rows(table_data.sub_rows.clone()); // 设置子行
-                                        table.refresh(cx); // 刷新表格
-                                    });
-                                });
-
+                                
                                 // 将面板添加到停靠区域
                                 let panel_item = DockItem::tab(
                                     sub_items_panel.clone(),
@@ -1543,19 +1547,14 @@ impl CarbonResultPanel {
                                         cx,
                                     );
                                 });
-
-                                this.sub_items_panel = Some(sub_items_panel); // 设置子项目面板
-                            } else if let Some(panel) = &this.sub_items_panel {
-                                debug!("Updating existing sub items panel"); // 调试信息
-                                // 更新现有面板数据
-                                let table_data = this.table.read(cx).delegate().clone(); // 克隆表格数据
-                                debug!("Number of sub rows to update:", table_data.sub_rows.len()); // 调试信息
-                                panel.update(cx, |panel, cx| {
-                                    panel.table.update(cx, |table, cx| {
-                                        table.delegate_mut().set_rows(table_data.sub_rows.clone()); // 设置子行
-                                        table.refresh(cx); // 刷新表格
-                                    });
-                                });
+                                
+                                this.sub_items_panel = Some(sub_items_panel);
+                            }
+                            
+                            // 从数据库加载该工作表的详细数据
+                            if let Some(panel) = &this.sub_items_panel {
+                                // 获取工作表ID并加载该表的子项目数据
+                                this.load_sub_items_for_sheet(&sheet_name, panel, window, cx);
                             }
                         }
                     }
@@ -1567,6 +1566,230 @@ impl CarbonResultPanel {
         });
 
         view
+    }
+
+    fn load_sub_items_for_sheet(
+        &self,
+        sheet_name: &str, 
+        panel: &Entity<ResultDetailsPanel>,
+        window: &mut Window,
+        cx: &mut Context<CarbonResultPanel>
+    ) {
+        debug!("Loading sub items for sheet: {}", sheet_name);
+        
+        // Get database path from story
+        let db_path = self.story.read(cx).db_path.clone();
+        
+        // Connect to database
+        match Connection::open(&db_path) {
+            Ok(conn) => {
+                // First get sheet_id
+                match conn.query_row(
+                    "SELECT id FROM sheets WHERE name = ?",
+                    params![sheet_name],
+                    |row| row.get::<_, i64>(0)
+                ) {
+                    Ok(sheet_id) => {
+                        debug!("Found sheet_id: {} for {}", sheet_id, sheet_name);
+                        
+                        // First ensure we have data for this sheet - help debug issues
+                        let count: i64 = match conn.query_row(
+                            "SELECT COUNT(*) FROM excel_data WHERE sheet_id = ?",
+                            params![sheet_id],
+                            |row| row.get(0)
+                        ) {
+                            Ok(count) => count,
+                            Err(e) => {
+                                debug!("Error checking row count: {}", e);
+                                0
+                            }
+                        };
+                        
+                        if count == 0 {
+                            debug!("No data found for sheet: {}", sheet_name);
+                            window.push_notification(
+                                Notification::new(format!("工作表 {} 没有数据", sheet_name))
+                                    .with_type(NotificationType::Warning),
+                                cx,
+                            );
+                            return;
+                        }
+                        
+                        debug!("Sheet {} has {} rows of data", sheet_name, count);
+                        
+                        // Query sub items for this sheet
+                        let mut sub_items = Vec::new();
+                        
+                        // Check all categories present
+                        let categories: Vec<String> = {
+                            let mut stmt = match conn.prepare(
+                                "SELECT DISTINCT category FROM excel_data 
+                                 WHERE sheet_id = ? AND category IS NOT NULL"
+                            ) {
+                                Ok(stmt) => stmt,
+                                Err(e) => {
+                                    debug!("Error preparing category query: {}", e);
+                                    return;
+                                }
+                            };
+                            
+                            let rows = match stmt.query_map(params![sheet_id], |row| row.get(0)) {
+                                Ok(rows) => rows,
+                                Err(e) => {
+                                    debug!("Error querying categories: {}", e);
+                                    return;
+                                }
+                            };
+                            
+                            let mut result = Vec::new();
+                            for row in rows {
+                                match row {
+                                    Ok(category) => result.push(category),
+                                    Err(e) => {
+                                        debug!("Error reading category: {}", e);
+                                        continue;
+                                    }
+                                }
+                            }
+                            result
+                        };
+                        
+                        debug!("Sheet has the following categories: {:?}", &categories);
+                        
+                        // Process each main category one at a time (labor, material, machine)
+                        for category_name in ["labor", "material", "machine"] {
+                            // Skip if this category doesn't exist in this sheet
+                            if !categories.contains(&category_name.to_string()) {
+                                debug!("Sheet doesn't contain category: {}", category_name);
+                                continue;
+                            }
+                            
+                            // Create a category header row
+                            let header_text = match category_name {
+                                "labor" => "人工类别",
+                                "material" => "材料类别",
+                                "machine" => "机械类别",
+                                _ => "未知类别"
+                            };
+                            
+                            // Add category header
+                            let header = SubItemRow {
+                                序号: "".to_string(),
+                                编码: "".to_string(),
+                                名称及规格: header_text.to_string(),
+                                单位: "".to_string(),
+                                数量: "".to_string(),
+                                市场价: "".to_string(),
+                                合计: "".to_string(),
+                                category: Category::from_string(category_name),
+                            };
+                            
+                            sub_items.push(header);
+                            
+                            // Get items for this category
+                            match conn.prepare(
+                                "SELECT 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计 
+                                 FROM excel_data 
+                                 WHERE sheet_id = ? AND category = ? AND 名称及规格 NOT LIKE '%类别'
+                                 ORDER BY id"
+                            ) {
+                                Ok(mut stmt) => {
+                                    match stmt.query_map(params![sheet_id, category_name], |row| {
+                                        Ok(SubItemRow {
+                                            序号: row.get(0).unwrap_or_default(),
+                                            编码: row.get(1).unwrap_or_default(),
+                                            名称及规格: row.get(2).unwrap_or_default(),
+                                            单位: row.get(3).unwrap_or_default(),
+                                            数量: row.get(4).unwrap_or_default(),
+                                            市场价: row.get(5).unwrap_or_default(),
+                                            合计: row.get(6).unwrap_or_default(),
+                                            category: Category::from_string(category_name),
+                                        })
+                                    }) {
+                                        Ok(rows) => {
+                                            let mut items = Vec::new();
+                                            for (i, result) in rows.enumerate() {
+                                                match result {
+                                                    Ok(mut row) => {
+                                                        // Update row number for better display
+                                                        row.序号 = (i + 1).to_string();
+                                                        items.push(row);
+                                                    },
+                                                    Err(e) => {
+                                                        debug!("Error reading category item: {}", e);
+                                                        continue;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            debug!("Added {} items for category {}", items.len(), category_name);
+                                            
+                                            // Add all items for this category
+                                            sub_items.extend(items);
+                                            
+                                            // Add an empty row as separator if not the last category
+                                            if category_name != "machine" {
+                                                sub_items.push(SubItemRow::default());
+                                            }
+                                        },
+                                        Err(e) => {
+                                            debug!("Error querying category items: {}", e);
+                                            continue;
+                                        }
+                                    }
+                                },
+                                Err(e) => {
+                                    debug!("Error preparing category items query: {}", e);
+                                    continue;
+                                }
+                            }
+                        }
+                        
+                        debug!("Total sub items: {}", sub_items.len());
+                        
+                        if sub_items.is_empty() {
+                            window.push_notification(
+                                Notification::new(format!("工作表 {} 没有可显示的子项", sheet_name))
+                                    .with_type(NotificationType::Warning),
+                                cx,
+                            );
+                            return;
+                        }
+                        
+                        // Update the panel with the sub items
+                        panel.update(cx, |panel, cx| {
+                            panel.table.update(cx, |table, cx| {
+                                table.delegate_mut().set_rows(sub_items);
+                                table.refresh(cx);
+                            });
+                        });
+                        
+                        // Show the panel if it was previously hidden
+                        window.push_notification(
+                            Notification::new(format!("已显示工作表 {} 的子项目详情", sheet_name))
+                                .with_type(NotificationType::Info),
+                            cx,
+                        );
+                    },
+                    Err(e) => {
+                        debug!("Error finding sheet_id for {}: {}", sheet_name, e);
+                        window.push_notification(
+                            Notification::new(format!("未找到工作表: {}", sheet_name))
+                                .with_type(NotificationType::Error),
+                            cx,
+                        );
+                    }
+                }
+            },
+            Err(e) => {
+                debug!("Error connecting to database: {}", &e);
+                window.push_notification(
+                    Notification::new(format!("数据库连接失败: {}", e))
+                        .with_type(NotificationType::Error),
+                    cx,
+                );
+            }
+        }
     }
 }
 
@@ -1623,13 +1846,13 @@ impl ResultDetailsTableDelegate {
     }
 
     fn set_rows(&mut self, result_rows: Vec<SubItemRow>) {
-        debug!("Setting rows in SubItemsTableDelegate, received rows:", result_rows.len());
+        debug!("Setting rows in SubItemsTableDelegate, received rows: {}", result_rows.len());
         
         // 清空现有数据
         self.rows.clear();
 
         // 当前类别
-        let mut current_category = Category::None;
+        let mut _current_category = Category::None;
         let mut current_rows: Vec<SubItemRow> = Vec::new();
 
         // 遍历所有行
@@ -1648,7 +1871,7 @@ impl ResultDetailsTableDelegate {
                 }
 
                 // 更新当前类别
-                current_category = category;
+                _current_category = category;
                 // 添加类别标题行
                 self.rows.push(row);
             } else if !row.编码.is_empty() {
@@ -1665,7 +1888,7 @@ impl ResultDetailsTableDelegate {
             }
         }
 
-        debug!("Final number of rows in delegate:", self.rows.len());
+        debug!("Final number of rows in delegate: {}", self.rows.len());
     }
 }
 
