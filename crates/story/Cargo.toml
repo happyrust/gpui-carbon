@@ -19,6 +19,11 @@ serde = "1"
 serde_json = "1"
 unindent = "0.2.3"
 raw-window-handle = { version = "0.6", features = ["std"] }
+schemars = "0.8.22"
+rusqlite = "0.32.0"
+tokio-rusqlite = "0.6.0"
+rfd = "0.15.2"
+calamine = "0.26.1"
 
 [lints]
 workspace = true

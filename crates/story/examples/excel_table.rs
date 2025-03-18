@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use story::{Assets, Story};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, JsonSchema, Serialize)]
 enum Category {
     Labor,    // 人工
     Material, // 材料
@@ -42,15 +42,12 @@ impl Default for Category {
 }
 
 impl Category {
-    fn from_title(title: &str) -> Option<Self> {
-        if title.contains("人工类别") {
-            Some(Category::Labor)
-        } else if title.contains("材料类别") {
-            Some(Category::Material)
-        } else if title.contains("机械类别") {
-            Some(Category::Machine)
-        } else {
-            None
+    fn from_type_column(名称及规格: &str) -> Option<Self> {
+        match 名称及规格.trim() {
+            "人工类别" => Some(Category::Labor),
+            "材料类别" => Some(Category::Material), 
+            "机械类别" => Some(Category::Machine),
+            _ => None
         }
     }
 
@@ -60,6 +57,24 @@ impl Category {
             Category::Material => "M",
             Category::Machine => "E",
             Category::None => "",
+        }
+    }
+
+    fn to_string(&self) -> String {
+        match self {
+            Category::Labor => "labor",
+            Category::Material => "material",
+            Category::Machine => "machine",
+            Category::None => "none",
+        }.to_string()
+    }
+
+    fn from_string(s: &str) -> Self {
+        match s {
+            "labor" => Category::Labor,
+            "material" => Category::Material,
+            "machine" => Category::Machine,
+            _ => Category::None,
         }
     }
 }
@@ -381,7 +396,7 @@ impl ExcelStory {
         };
 
         // Load resource data
-        excel_story.load_resource_data(window, cx);
+        excel_story.load_resource_data("assets/excel/人材机数据库.xlsx", window, cx);
 
         excel_story
     }
@@ -410,6 +425,7 @@ impl ExcelStory {
                 数量 TEXT,
                 市场价 TEXT,
                 合计 TEXT,
+                category TEXT,  -- 添加category字段
                 FOREIGN KEY(sheet_id) REFERENCES sheets(id)
             )",
             [],
@@ -504,6 +520,7 @@ impl ExcelStory {
             "SELECT 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计 
              FROM excel_data 
              WHERE sheet_id = ?
+             AND (编码 IS NOT NULL OR 名称及规格 LIKE '%类别')  -- 修改过滤条件，确保能读取到类别标题行
              ORDER BY id",
         )?;
 
@@ -518,7 +535,6 @@ impl ExcelStory {
             }
             data.push(row_data);
         }
-
         Ok((self.required_columns.clone(), data))
     }
 
@@ -638,18 +654,18 @@ impl ExcelStory {
                                             tx.execute(
                                                 "DELETE FROM excel_data WHERE sheet_id = ?",
                                                 params![sheet_id],
-                                            )?;
+                                            );
                                             tx.execute(
                                                 "DELETE FROM sheets WHERE id = ?",
                                                 params![sheet_id],
-                                            )?;
+                                            );
                                         }
 
                                         // Insert or update sheet
                                         tx.execute(
                                             "INSERT INTO sheets (name) VALUES (?)",
                                             params![sheet_name],
-                                        )?;
+                                        );
                                         let sheet_id = tx.last_insert_rowid();
 
                                         // Create column mapping
@@ -675,16 +691,25 @@ impl ExcelStory {
                                             let mut row_data = HashMap::new();
                                             let mut valid_columns = 0;
 
-                                            // Check if this row is a category header
-                                            if let Some(first_cell) = row.get(0) {
-                                                let cell_value = first_cell.to_string().trim().to_string();
-                                                if let Some(category) = Category::from_title(&cell_value) {
-                                                    current_category = category;
-                                                    dbg!("Found category header:", &cell_value, "Setting current_category to:", &current_category);
-                                                    continue; // Skip category header row
-                                                }
+                                            // 获取名称及规格字段
+                                            let 名称及规格 = row.get(2).map(|c| c.to_string()).unwrap_or_default();
+
+                                            // 检查是否是类别标题行
+                                            if 名称及规格.trim() == "人工类别" {
+                                                current_category = Category::Labor;
+                                                dbg!("Found labor category");
+                                                continue;
+                                            } else if 名称及规格.trim() == "材料类别" {
+                                                current_category = Category::Material;
+                                                dbg!("Found material category");
+                                                continue;
+                                            } else if 名称及规格.trim() == "机械类别" {
+                                                current_category = Category::Machine;
+                                                dbg!("Found machine category");
+                                                continue;
                                             }
 
+                                            // 收集行数据
                                             for required_col in &self.required_columns {
                                                 if let Some(col_idx) = column_mapping
                                                     .iter()
@@ -702,28 +727,23 @@ impl ExcelStory {
                                             }
 
                                             if valid_columns > 0 {
+                                                // 更新类别计数
+                                                if let Some(count) = category_counts.get_mut(&current_category) {
+                                                    *count += 1;
+                                                }
+
                                                 // Modify 编码 based on category if it doesn't already have a prefix
                                                 if let Some(code) = row_data.get_mut("编码") {
                                                     if !code.starts_with('L') && !code.starts_with('M') && !code.starts_with('E') {
                                                         *code = format!("{}{}", current_category.prefix(), code);
                                                         dbg!("Added prefix to code:", code, "Category:", &current_category);
                                                     }
-                                                    // Update category count
-                                                    if code.starts_with('L') {
-                                                        *category_counts.get_mut(&Category::Labor).unwrap() += 1;
-                                                    } else if code.starts_with('M') {
-                                                        *category_counts.get_mut(&Category::Material).unwrap() += 1;
-                                                    } else if code.starts_with('E') {
-                                                        *category_counts.get_mut(&Category::Machine).unwrap() += 1;
-                                                    } else {
-                                                        *category_counts.get_mut(&Category::None).unwrap() += 1;
-                                                    }
                                                 }
 
                                                 tx.execute(
                                                     "INSERT INTO excel_data (
-                                                        sheet_id, 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计
-                                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                                        sheet_id, 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计, category
+                                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                                     params![
                                                         sheet_id,
                                                         row_data.get("序号").unwrap_or(&String::new()),
@@ -733,8 +753,9 @@ impl ExcelStory {
                                                         row_data.get("数量").unwrap_or(&String::new()),
                                                         row_data.get("市场价").unwrap_or(&String::new()),
                                                         row_data.get("合计").unwrap_or(&String::new()),
+                                                        current_category.to_string(),
                                                     ],
-                                                )?;
+                                                ).unwrap();
                                             }
                                         }
 
@@ -805,10 +826,10 @@ impl ExcelStory {
         }
     }
 
-    fn load_resource_data(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let file_path = PathBuf::from("assets/excel/人材机数据库.xlsx");
+    fn load_resource_data(&self, file_path: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let path = PathBuf::from(file_path);
 
-        match open_workbook::<Xlsx<_>, _>(&file_path) {
+        match open_workbook::<Xlsx<_>, _>(&path) {
             Ok(mut workbook) => {
                 // Open database connection
                 match Connection::open(&self.db_path) {
@@ -968,6 +989,7 @@ struct ParamFormPane {
     project_type_dropdown: Entity<Dropdown<Vec<SharedString>>>,
     road_type_dropdown: Entity<Dropdown<Vec<SharedString>>>,
     file_path_input: Entity<TextInput>,
+    carbon_ref_input: Entity<TextInput>,  // 新增人材机数据文件输入
 }
 
 impl ParamFormPane {
@@ -979,6 +1001,12 @@ impl ParamFormPane {
         let file_path_input = cx.new(|cx| {
             let mut input = TextInput::new(window, cx);
             input.set_text("assets/excel/指标汇总.xlsx", window, cx);
+            input
+        });
+
+        let carbon_ref_input = cx.new(|cx| {
+            let mut input = TextInput::new(window, cx);
+            input.set_text("assets/excel/人材机数据库.xlsx", window, cx);
             input
         });
 
@@ -1001,6 +1029,7 @@ impl ParamFormPane {
             let project_type_dropdown = project_type_dropdown.clone();
             let road_type_dropdown = road_type_dropdown.clone();
             let file_path_input = file_path_input.clone();
+            let carbon_ref_input = carbon_ref_input.clone();
 
             let panel = Self {
                 story: story.clone(),
@@ -1008,6 +1037,7 @@ impl ParamFormPane {
                 project_type_dropdown: project_type_dropdown.clone(),
                 road_type_dropdown: road_type_dropdown.clone(),
                 file_path_input: file_path_input.clone(),
+                carbon_ref_input: carbon_ref_input.clone(),
             };
 
             // Subscribe to dropdown events
@@ -1048,15 +1078,6 @@ impl ParamFormPane {
                 let story = story.clone();
                 move |_, _dropdown, event: &UpdateTypesUIEvent, _window, cx| {
                     dbg!("UpdateTypesUIEvent");
-                    // if let DropdownEvent::Confirm(Some(value)) = event {
-                    //     story.update(cx, |story, cx| {
-                    //         story.road_type = value.to_string();
-                    //         // 只有当两个类型都已选择时才发送更新事件
-                    //         if !story.project_type.is_empty() && !story.road_type.is_empty() {
-                    //             cx.emit(UpdateResultTable);
-                    //         }
-                    //     });
-                    // }
                 }
             })
             .detach();
@@ -1088,12 +1109,11 @@ impl Focusable for ParamFormPane {
 
 impl Render for ParamFormPane {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // let this = self.story.read(cx);
         let file_path_input = self.file_path_input.clone();
+        let carbon_ref_input = self.carbon_ref_input.clone();
         div()
             .flex()
             .flex_col()
-            // .min_w(px(100.))
             .w_auto()
             .p_4()
             .bg(hsla(0.0, 0.0, 0.96, 1.0))
@@ -1103,7 +1123,7 @@ impl Render for ParamFormPane {
                     .child(
                         v_flex()
                             .gap_2()
-                            .child(Label::new("Excel 文件路径"))
+                            .child(Label::new("单位指标文件"))
                             .child(
                                 div().w_full().child(
                                     h_flex()
@@ -1121,7 +1141,7 @@ impl Render for ParamFormPane {
                                                                     "Excel files",
                                                                     &["xlsx"],
                                                                 )
-                                                                .set_title("选择 Excel 文件")
+                                                                .set_title("选择单位指标文件")
                                                                 .pick_file()
                                                                 .await
                                                         {
@@ -1129,7 +1149,6 @@ impl Render for ParamFormPane {
                                                                 .path()
                                                                 .to_string_lossy()
                                                                 .to_string();
-                                                            // awc.update_entity(handle, update)
                                                             awc.update(|win, cx| {
                                                                 file_path_input.update(
                                                                     cx,
@@ -1148,58 +1167,81 @@ impl Render for ParamFormPane {
                                 ),
                             )
                             .child(
-                                h_flex()
+                                Button::new("load")
+                                    .label("导入单位指标")
+                                    .on_click({
+                                        let story = self.story.clone();
+                                        let file_path_input = self.file_path_input.clone();
+                                        move |_, window, cx| {
+                                            let file_path = file_path_input.read(cx).text();
+                                            story.update(cx, |this, cx| {
+                                                this.load_excel(&file_path, window, cx);
+                                            });
+                                        }
+                                    })
+                                    .w_full(),
+                            )
+                            .child(
+                                v_flex()
                                     .gap_2()
+                                    .child(Label::new("人材机数据文件"))
                                     .child(
-                                        Button::new("load")
-                                            .label("导入Excel")
+                                        div().w_full().child(
+                                            h_flex()
+                                                .gap_1()
+                                                .child(div().flex_grow().child(carbon_ref_input.clone()))
+                                                .child(Button::new("select-carbon-ref").label("...").on_click({
+                                                    let carbon_ref_input = carbon_ref_input.clone();
+                                                    move |_, window, cx| {
+                                                        let carbon_ref_input = carbon_ref_input.clone();
+                                                        window
+                                                            .spawn(cx, |mut awc| async move {
+                                                                if let Some(path) =
+                                                                    rfd::AsyncFileDialog::new()
+                                                                        .add_filter(
+                                                                            "Excel files",
+                                                                            &["xlsx"],
+                                                                        )
+                                                                        .set_title("选择人材机数据文件")
+                                                                        .pick_file()
+                                                                        .await
+                                                                {
+                                                                    let path_str = path
+                                                                        .path()
+                                                                        .to_string_lossy()
+                                                                        .to_string();
+                                                                    awc.update(|win, cx| {
+                                                                        carbon_ref_input.update(
+                                                                            cx,
+                                                                            |input, cx| {
+                                                                                input.set_text(
+                                                                                    &path_str, win, cx,
+                                                                                );
+                                                                            },
+                                                                        );
+                                                                    });
+                                                                }
+                                                            })
+                                                            .detach();
+                                                    }
+                                                })),
+                                        ),
+                                    )
+                                    .child(
+                                        Button::new("load-carbon-ref")
+                                            .label("导入人材机数据")
                                             .on_click({
                                                 let story = self.story.clone();
-                                                let file_path_input = self.file_path_input.clone();
+                                                let carbon_ref_input = self.carbon_ref_input.clone();
                                                 move |_, window, cx| {
-                                                    let file_path = file_path_input.read(cx).text();
+                                                    let file_path = carbon_ref_input.read(cx).text();
                                                     story.update(cx, |this, cx| {
-                                                        this.load_excel(&file_path, window, cx);
+                                                        this.load_resource_data(&file_path, window, cx);
                                                     });
                                                 }
                                             })
-                                            .flex_grow(),
-                                    )
-                                    .child({
-                                        let this = self.story.read(cx);
-                                        let current_sheet_label = this
-                                            .current_sheet
-                                            .as_deref()
-                                            .unwrap_or("选择工作表")
-                                            .to_string();
-                                        let button = Button::new("sheet")
-                                            .label(current_sheet_label)
-                                            .flex_grow();
-
-                                        let db_path = this.db_path.clone();
-                                        button.popup_menu(move |menu, _, _| {
-                                            let mut menu = menu;
-                                            if let Ok(conn) = Connection::open(&db_path) {
-                                                if let Ok(mut stmt) = conn
-                                                    .prepare("SELECT name FROM sheets ORDER BY id")
-                                                {
-                                                    if let Ok(rows) = stmt.query_map([], |row| {
-                                                        row.get::<_, String>(0)
-                                                    }) {
-                                                        for sheet_name in rows.flatten() {
-                                                            menu = menu.menu(
-                                                                sheet_name.clone(),
-                                                                Box::new(ChangeSheet {
-                                                                    sheet_name: sheet_name.clone(),
-                                                                }),
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            menu
-                                        })
-                                    }),
+                                            .w_full(),
+                                    ),
                             ),
                     )
                     .child(
@@ -1374,6 +1416,7 @@ impl ResultTableDelegate {
                     e.数量,
                     e.市场价,
                     e.合计,
+                    e.category,
                     CASE 
                         WHEN e.编码 LIKE 'L%' THEN l.carbon_factor
                         WHEN e.编码 LIKE 'M%' THEN m.carbon_factor
@@ -1385,8 +1428,7 @@ impl ResultTableDelegate {
                 LEFT JOIN material m ON e.编码 = m.code
                 LEFT JOIN machine mc ON e.编码 = mc.code
                 WHERE e.sheet_id = :sheet_id
-                AND e.编码 IS NOT NULL
-                AND e.编码 != ''
+                AND (e.编码 IS NOT NULL OR e.名称及规格 LIKE '%类别')  -- 修改过滤条件，确保能读取到类别标题行
             )
             SELECT 
                 序号,
@@ -1396,9 +1438,10 @@ impl ResultTableDelegate {
                 数量,
                 市场价,
                 合计,
+                category,
                 carbon_factor
             FROM combined_factors
-            ORDER BY 编码;
+            ORDER BY id;
             ",
         )?;
 
@@ -1410,24 +1453,13 @@ impl ResultTableDelegate {
             let 数量: String = row.get(4)?;
             let 市场价: String = row.get(5)?;
             let 合计: String = row.get(6)?;
-            let carbon_factor: f64 = row.get(7)?;
+            let category: String = row.get(7)?;
+            let carbon_factor: f64 = row.get(8)?;
 
             dbg!("Processing row:", &编码, &名称及规格);
 
-            // 确定类别
-            let category = if 编码.starts_with('L') {
-                dbg!("Found Labor item:", &编码);
-                Category::Labor
-            } else if 编码.starts_with('M') {
-                dbg!("Found Material item:", &编码);
-                Category::Material
-            } else if 编码.starts_with('E') {
-                dbg!("Found Machine item:", &编码);
-                Category::Machine
-            } else {
-                dbg!("Found uncategorized item:", &编码);
-                Category::None
-            };
+            // 从数据库中获取类别
+            let category = Category::from_string(&category);
 
             // 计算碳排放量
             let emission = carbon_factor * 数量.parse::<f64>().unwrap_or(0.0);
@@ -1781,87 +1813,38 @@ impl SubItemsTableDelegate {
         // 清空现有数据
         self.rows.clear();
 
-        // 分类存储行
-        let mut labor_rows = Vec::new();
-        let mut material_rows = Vec::new();
-        let mut machine_rows = Vec::new();
+        // 当前类别
+        let mut current_category = Category::None;
+        let mut current_rows: Vec<SubItemRow> = Vec::new();
 
-        // 遍历并分类数据
+        // 遍历所有行
         for row in result_rows {
-            match row.category {
-                Category::Labor => labor_rows.push(row),
-                Category::Material => material_rows.push(row),
-                Category::Machine => machine_rows.push(row),
-                Category::None => continue,
-            }
-        }
+            // 检查是否是类别标题行
+            if let Some(category) = Category::from_type_column(&row.名称及规格) {
+                // 如果有之前的类别数据，先添加到结果中
+                if !current_rows.is_empty() {
+                    // 添加当前类别的所有行
+                    for (i, mut row) in current_rows.drain(..).enumerate() {
+                        row.序号 = (i + 1).to_string();
+                        self.rows.push(row);
+                    }
+                    // 添加空行分隔
+                    self.rows.push(SubItemRow::default());
+                }
 
-        dbg!("Categorized rows - Labor:", labor_rows.len(), "Material:", material_rows.len(), "Machine:", machine_rows.len());
-
-        // 添加人工类别标题和数据
-        if !labor_rows.is_empty() {
-            // 添加人工类别标题
-            self.rows.push(SubItemRow {
-                序号: "一".to_string(),
-                编码: "".to_string(),
-                名称及规格: "人工类别".to_string(),
-                单位: "".to_string(),
-                数量: "".to_string(),
-                市场价: "".to_string(),
-                合计: "".to_string(),
-                category: Category::Labor,
-            });
-
-            // 添加人工数据行
-            for (i, mut row) in labor_rows.into_iter().enumerate() {
-                row.序号 = (i + 1).to_string();
+                // 更新当前类别
+                current_category = category;
+                // 添加类别标题行
                 self.rows.push(row);
+            } else if !row.编码.is_empty() {
+                // 普通数据行，添加到当前类别的行集合中
+                current_rows.push(row);
             }
-
-            // 添加空行
-            self.rows.push(SubItemRow::default());
         }
 
-        // 添加材料类别标题和数据
-        if !material_rows.is_empty() {
-            // 添加材料类别标题
-            self.rows.push(SubItemRow {
-                序号: "三".to_string(),
-                编码: "".to_string(),
-                名称及规格: "材料类别".to_string(),
-                单位: "".to_string(),
-                数量: "".to_string(),
-                市场价: "".to_string(),
-                合计: "".to_string(),
-                category: Category::Material,
-            });
-
-            // 添加材料数据行
-            for (i, mut row) in material_rows.into_iter().enumerate() {
-                row.序号 = (i + 1).to_string();
-                self.rows.push(row);
-            }
-
-            // 添加空行
-            self.rows.push(SubItemRow::default());
-        }
-
-        // 添加机械类别标题和数据
-        if !machine_rows.is_empty() {
-            // 添加机械类别标题
-            self.rows.push(SubItemRow {
-                序号: "四".to_string(),
-                编码: "".to_string(),
-                名称及规格: "机械类别".to_string(),
-                单位: "".to_string(),
-                数量: "".to_string(),
-                市场价: "".to_string(),
-                合计: "".to_string(),
-                category: Category::Machine,
-            });
-
-            // 添加机械数据行
-            for (i, mut row) in machine_rows.into_iter().enumerate() {
+        // 处理最后一个类别的数据
+        if !current_rows.is_empty() {
+            for (i, mut row) in current_rows.drain(..).enumerate() {
                 row.序号 = (i + 1).to_string();
                 self.rows.push(row);
             }
@@ -1969,3 +1952,5 @@ fn main() {
         story::create_new_window("碳排放计算程序", ExcelStory::new_view, cx);
     });
 }
+
+
