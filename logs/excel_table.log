@@ -1,0 +1,199 @@
+2025-03-18T23:35:17.855715+08:00 - INFO - Starting Excel Table application
+2025-03-18T23:35:18.198961+08:00 - DEBUG - no tokio runtime found, creating one for Reqwest...
+2025-03-18T23:35:18.203287+08:00 - INFO - Application window created
+2025-03-18T23:35:18.518115+08:00 - DEBUG - glob converted to regex: Glob { glob: "fonts/**/*", re: "(?-u)^fonts(?:/|/.*/).*$", opts: GlobOptions { case_insensitive: false, literal_separator: false, backslash_escape: true, empty_alternates: false }, tokens: Tokens([Literal('f'), Literal('o'), Literal('n'), Literal('t'), Literal('s'), RecursiveZeroOrMore, ZeroOrMore]) }
+2025-03-18T23:35:18.518172+08:00 - DEBUG - glob converted to regex: Glob { glob: "icons/**/*", re: "(?-u)^icons(?:/|/.*/).*$", opts: GlobOptions { case_insensitive: false, literal_separator: false, backslash_escape: true, empty_alternates: false }, tokens: Tokens([Literal('i'), Literal('c'), Literal('o'), Literal('n'), Literal('s'), RecursiveZeroOrMore, ZeroOrMore]) }
+2025-03-18T23:35:18.518182+08:00 - DEBUG - built glob set; 0 literals, 0 basenames, 0 extensions, 0 prefixes, 0 suffixes, 0 required extensions, 2 regexes
+2025-03-18T23:35:18.519343+08:00 - DEBUG - built glob set; 0 literals, 0 basenames, 1 extensions, 0 prefixes, 0 suffixes, 0 required extensions, 0 regexes
+2025-03-18T23:35:26.845507+08:00 - DEBUG - Starting to process rows for sheet: 道路工程 主干路67cm m2
+2025-03-18T23:35:26.845579+08:00 - DEBUG - Found labor category
+2025-03-18T23:35:26.845611+08:00 - DEBUG - Added prefix to code: L870007, Category: labor
+2025-03-18T23:35:26.845641+08:00 - DEBUG - Added prefix to code: LRGFTZ, Category: labor
+2025-03-18T23:35:26.845662+08:00 - DEBUG - Found material category
+2025-03-18T23:35:26.845678+08:00 - DEBUG - Added prefix to code: MCLFTZ, Category: material
+2025-03-18T23:35:26.845702+08:00 - DEBUG - Added prefix to code: M100321, Category: material
+2025-03-18T23:35:26.845725+08:00 - DEBUG - Added prefix to code: M810157@2, Category: material
+2025-03-18T23:35:26.845748+08:00 - DEBUG - Added prefix to code: M810156@3, Category: material
+2025-03-18T23:35:26.845770+08:00 - DEBUG - Added prefix to code: M810155@1, Category: material
+2025-03-18T23:35:26.845792+08:00 - DEBUG - Added prefix to code: M810161, Category: material
+2025-03-18T23:35:26.845814+08:00 - DEBUG - Added prefix to code: M840004, Category: material
+2025-03-18T23:35:26.845835+08:00 - DEBUG - Added prefix to code: M810158, Category: material
+2025-03-18T23:35:26.845857+08:00 - DEBUG - Added prefix to code: M040072, Category: material
+2025-03-18T23:35:26.845878+08:00 - DEBUG - Added prefix to code: M840006, Category: material
+2025-03-18T23:35:26.845899+08:00 - DEBUG - Added prefix to code: M040087, Category: material
+2025-03-18T23:35:26.845915+08:00 - DEBUG - Found machine category
+2025-03-18T23:35:26.845930+08:00 - DEBUG - Added prefix to code: E800074, Category: machine
+2025-03-18T23:35:26.845951+08:00 - DEBUG - Added prefix to code: E800076, Category: machine
+2025-03-18T23:35:26.845972+08:00 - DEBUG - Added prefix to code: E800079, Category: machine
+2025-03-18T23:35:26.845993+08:00 - DEBUG - Added prefix to code: E800080, Category: machine
+2025-03-18T23:35:26.846014+08:00 - DEBUG - Added prefix to code: E800291, Category: machine
+2025-03-18T23:35:26.846035+08:00 - DEBUG - Added prefix to code: E800297, Category: machine
+2025-03-18T23:35:26.846056+08:00 - DEBUG - Added prefix to code: E800340, Category: machine
+2025-03-18T23:35:26.846077+08:00 - DEBUG - Added prefix to code: E800658, Category: machine
+2025-03-18T23:35:26.846098+08:00 - DEBUG - Added prefix to code: E800659, Category: machine
+2025-03-18T23:35:26.846119+08:00 - DEBUG - Added prefix to code: E800863, Category: machine
+2025-03-18T23:35:26.846140+08:00 - DEBUG - Added prefix to code: E840023, Category: machine
+2025-03-18T23:35:26.846194+08:00 - DEBUG - Category counts for sheet: 道路工程 主干路67cm m2
+2025-03-18T23:35:26.846201+08:00 - DEBUG - Labor items: 2
+2025-03-18T23:35:26.846206+08:00 - DEBUG - Material items: 11
+2025-03-18T23:35:26.846212+08:00 - DEBUG - Machine items: 12
+2025-03-18T23:35:26.846226+08:00 - DEBUG - Uncategorized items: 0
+2025-03-18T23:35:26.848001+08:00 - DEBUG - Starting to process rows for sheet: 道路工程 主干路57cm m2
+2025-03-18T23:35:26.848014+08:00 - DEBUG - Found labor category
+2025-03-18T23:35:26.848031+08:00 - DEBUG - Added prefix to code: L870007, Category: labor
+2025-03-18T23:35:26.848053+08:00 - DEBUG - Added prefix to code: LRGFTZ, Category: labor
+2025-03-18T23:35:26.848068+08:00 - DEBUG - Found material category
+2025-03-18T23:35:26.848082+08:00 - DEBUG - Added prefix to code: MCLFTZ, Category: material
+2025-03-18T23:35:26.848102+08:00 - DEBUG - Added prefix to code: M100321, Category: material
+2025-03-18T23:35:26.848123+08:00 - DEBUG - Added prefix to code: M810157@2, Category: material
+2025-03-18T23:35:26.848143+08:00 - DEBUG - Added prefix to code: M810156@3, Category: material
+2025-03-18T23:35:26.848163+08:00 - DEBUG - Added prefix to code: M810155@1, Category: material
+2025-03-18T23:35:26.848184+08:00 - DEBUG - Added prefix to code: M810161, Category: material
+2025-03-18T23:35:26.848203+08:00 - DEBUG - Added prefix to code: M840004, Category: material
+2025-03-18T23:35:26.848223+08:00 - DEBUG - Added prefix to code: M810158, Category: material
+2025-03-18T23:35:26.848243+08:00 - DEBUG - Added prefix to code: M040072, Category: material
+2025-03-18T23:35:26.848262+08:00 - DEBUG - Added prefix to code: M840006, Category: material
+2025-03-18T23:35:26.848283+08:00 - DEBUG - Added prefix to code: M040087, Category: material
+2025-03-18T23:35:26.848298+08:00 - DEBUG - Found machine category
+2025-03-18T23:35:26.848312+08:00 - DEBUG - Added prefix to code: E800074, Category: machine
+2025-03-18T23:35:26.848331+08:00 - DEBUG - Added prefix to code: E800076, Category: machine
+2025-03-18T23:35:26.848351+08:00 - DEBUG - Added prefix to code: E800079, Category: machine
+2025-03-18T23:35:26.848371+08:00 - DEBUG - Added prefix to code: E800080, Category: machine
+2025-03-18T23:35:26.848390+08:00 - DEBUG - Added prefix to code: E800291, Category: machine
+2025-03-18T23:35:26.848410+08:00 - DEBUG - Added prefix to code: E800297, Category: machine
+2025-03-18T23:35:26.848430+08:00 - DEBUG - Added prefix to code: E800340, Category: machine
+2025-03-18T23:35:26.848449+08:00 - DEBUG - Added prefix to code: E800658, Category: machine
+2025-03-18T23:35:26.848469+08:00 - DEBUG - Added prefix to code: E800659, Category: machine
+2025-03-18T23:35:26.848489+08:00 - DEBUG - Added prefix to code: E800863, Category: machine
+2025-03-18T23:35:26.848508+08:00 - DEBUG - Added prefix to code: E840023, Category: machine
+2025-03-18T23:35:26.848561+08:00 - DEBUG - Category counts for sheet: 道路工程 主干路57cm m2
+2025-03-18T23:35:26.848566+08:00 - DEBUG - Labor items: 2
+2025-03-18T23:35:26.848571+08:00 - DEBUG - Material items: 11
+2025-03-18T23:35:26.848575+08:00 - DEBUG - Machine items: 12
+2025-03-18T23:35:26.848580+08:00 - DEBUG - Uncategorized items: 0
+2025-03-18T23:35:26.850300+08:00 - DEBUG - Starting to process rows for sheet: 交通工程 次干路59cm m2
+2025-03-18T23:35:26.850316+08:00 - DEBUG - Found labor category
+2025-03-18T23:35:26.850334+08:00 - DEBUG - Added prefix to code: L870007, Category: labor
+2025-03-18T23:35:26.850356+08:00 - DEBUG - Added prefix to code: LRGFTZ, Category: labor
+2025-03-18T23:35:26.850372+08:00 - DEBUG - Found material category
+2025-03-18T23:35:26.850385+08:00 - DEBUG - Added prefix to code: MCLFTZ, Category: material
+2025-03-18T23:35:26.850405+08:00 - DEBUG - Added prefix to code: M100321, Category: material
+2025-03-18T23:35:26.850425+08:00 - DEBUG - Added prefix to code: M810157@2, Category: material
+2025-03-18T23:35:26.850445+08:00 - DEBUG - Added prefix to code: M810155@1, Category: material
+2025-03-18T23:35:26.850465+08:00 - DEBUG - Added prefix to code: M810161, Category: material
+2025-03-18T23:35:26.850485+08:00 - DEBUG - Added prefix to code: M840004, Category: material
+2025-03-18T23:35:26.850505+08:00 - DEBUG - Added prefix to code: M810158, Category: material
+2025-03-18T23:35:26.850525+08:00 - DEBUG - Added prefix to code: M040072, Category: material
+2025-03-18T23:35:26.850555+08:00 - DEBUG - Added prefix to code: M840006, Category: material
+2025-03-18T23:35:26.850575+08:00 - DEBUG - Added prefix to code: M040087, Category: material
+2025-03-18T23:35:26.850590+08:00 - DEBUG - Found machine category
+2025-03-18T23:35:26.850603+08:00 - DEBUG - Added prefix to code: E800074, Category: machine
+2025-03-18T23:35:26.850622+08:00 - DEBUG - Added prefix to code: E800076, Category: machine
+2025-03-18T23:35:26.850642+08:00 - DEBUG - Added prefix to code: E800079, Category: machine
+2025-03-18T23:35:26.850680+08:00 - DEBUG - Added prefix to code: E800080, Category: machine
+2025-03-18T23:35:26.850700+08:00 - DEBUG - Added prefix to code: E800291, Category: machine
+2025-03-18T23:35:26.850720+08:00 - DEBUG - Added prefix to code: E800297, Category: machine
+2025-03-18T23:35:26.850740+08:00 - DEBUG - Added prefix to code: E800340, Category: machine
+2025-03-18T23:35:26.850759+08:00 - DEBUG - Added prefix to code: E800658, Category: machine
+2025-03-18T23:35:26.850778+08:00 - DEBUG - Added prefix to code: E800659, Category: machine
+2025-03-18T23:35:26.850797+08:00 - DEBUG - Added prefix to code: E800863, Category: machine
+2025-03-18T23:35:26.850815+08:00 - DEBUG - Added prefix to code: E840023, Category: machine
+2025-03-18T23:35:26.850869+08:00 - DEBUG - Category counts for sheet: 交通工程 次干路59cm m2
+2025-03-18T23:35:26.850874+08:00 - DEBUG - Labor items: 2
+2025-03-18T23:35:26.850878+08:00 - DEBUG - Material items: 10
+2025-03-18T23:35:26.850882+08:00 - DEBUG - Machine items: 12
+2025-03-18T23:35:26.850886+08:00 - DEBUG - Uncategorized items: 0
+2025-03-18T23:35:26.852615+08:00 - DEBUG - Starting to process rows for sheet: 交通工程 次干路69cm m2
+2025-03-18T23:35:26.852632+08:00 - DEBUG - Found labor category
+2025-03-18T23:35:26.852651+08:00 - DEBUG - Added prefix to code: L870007, Category: labor
+2025-03-18T23:35:26.852673+08:00 - DEBUG - Added prefix to code: LRGFTZ, Category: labor
+2025-03-18T23:35:26.852689+08:00 - DEBUG - Found material category
+2025-03-18T23:35:26.852702+08:00 - DEBUG - Added prefix to code: MCLFTZ, Category: material
+2025-03-18T23:35:26.852724+08:00 - DEBUG - Added prefix to code: M100321, Category: material
+2025-03-18T23:35:26.852744+08:00 - DEBUG - Added prefix to code: M810157@2, Category: material
+2025-03-18T23:35:26.852766+08:00 - DEBUG - Added prefix to code: M810155@1, Category: material
+2025-03-18T23:35:26.852787+08:00 - DEBUG - Added prefix to code: M810161, Category: material
+2025-03-18T23:35:26.852806+08:00 - DEBUG - Added prefix to code: M840004, Category: material
+2025-03-18T23:35:26.852827+08:00 - DEBUG - Added prefix to code: M810158, Category: material
+2025-03-18T23:35:26.852846+08:00 - DEBUG - Added prefix to code: M040072, Category: material
+2025-03-18T23:35:26.852866+08:00 - DEBUG - Added prefix to code: M840006, Category: material
+2025-03-18T23:35:26.852886+08:00 - DEBUG - Added prefix to code: M040087, Category: material
+2025-03-18T23:35:26.852901+08:00 - DEBUG - Found machine category
+2025-03-18T23:35:26.852914+08:00 - DEBUG - Added prefix to code: E800074, Category: machine
+2025-03-18T23:35:26.852933+08:00 - DEBUG - Added prefix to code: E800076, Category: machine
+2025-03-18T23:35:26.852953+08:00 - DEBUG - Added prefix to code: E800079, Category: machine
+2025-03-18T23:35:26.852972+08:00 - DEBUG - Added prefix to code: E800080, Category: machine
+2025-03-18T23:35:26.852992+08:00 - DEBUG - Added prefix to code: E800291, Category: machine
+2025-03-18T23:35:26.853012+08:00 - DEBUG - Added prefix to code: E800297, Category: machine
+2025-03-18T23:35:26.853032+08:00 - DEBUG - Added prefix to code: E800340, Category: machine
+2025-03-18T23:35:26.853052+08:00 - DEBUG - Added prefix to code: E800658, Category: machine
+2025-03-18T23:35:26.853071+08:00 - DEBUG - Added prefix to code: E800659, Category: machine
+2025-03-18T23:35:26.853091+08:00 - DEBUG - Added prefix to code: E800863, Category: machine
+2025-03-18T23:35:26.853110+08:00 - DEBUG - Added prefix to code: E840023, Category: machine
+2025-03-18T23:35:26.853164+08:00 - DEBUG - Category counts for sheet: 交通工程 次干路69cm m2
+2025-03-18T23:35:26.853178+08:00 - DEBUG - Labor items: 2
+2025-03-18T23:35:26.853182+08:00 - DEBUG - Material items: 10
+2025-03-18T23:35:26.853187+08:00 - DEBUG - Machine items: 12
+2025-03-18T23:35:26.853191+08:00 - DEBUG - Uncategorized items: 0
+2025-03-18T23:35:26.854568+08:00 - DEBUG - Checking database tables
+2025-03-18T23:35:26.854671+08:00 - DEBUG - Table sheets has 4 rows
+2025-03-18T23:35:26.854702+08:00 - DEBUG - Table excel_data has 98 rows
+2025-03-18T23:35:26.854724+08:00 - DEBUG - Table labor has 15 rows
+2025-03-18T23:35:26.854781+08:00 - DEBUG - Table material has 4766 rows
+2025-03-18T23:35:26.854806+08:00 - DEBUG - Table machine has 557 rows
+2025-03-18T23:35:26.854850+08:00 - DEBUG - Found 4 sheets in database
+2025-03-18T23:35:26.854875+08:00 - DEBUG - Processing sheet: 交通工程 次干路59cm m2 (id: 3, type: 交通工程)
+2025-03-18T23:35:26.854903+08:00 - DEBUG - Sheet 交通工程 次干路59cm m2 has 24 data rows
+2025-03-18T23:35:26.854943+08:00 - DEBUG - Category 'labor' has 2 items
+2025-03-18T23:35:26.854949+08:00 - DEBUG - Category 'machine' has 12 items
+2025-03-18T23:35:26.854954+08:00 - DEBUG - Category 'material' has 10 items
+2025-03-18T23:35:26.855082+08:00 - DEBUG - Category: labor, Total: 0.161368
+2025-03-18T23:35:26.855096+08:00 - DEBUG - Category: machine, Total: 0.333108
+2025-03-18T23:35:26.855105+08:00 - DEBUG - Category: material, Total: 25.850199999999997
+2025-03-18T23:35:26.855121+08:00 - DEBUG - Totals for sheet 交通工程 次干路59cm m2: Labor: 0.161368, Material: 25.850199999999997, Machine: 0.333108
+2025-03-18T23:35:26.855200+08:00 - DEBUG - Added 24 sub items for sheet 交通工程 次干路59cm m2
+2025-03-18T23:35:26.855210+08:00 - DEBUG - Processing sheet: 交通工程 次干路69cm m2 (id: 4, type: 交通工程)
+2025-03-18T23:35:26.855321+08:00 - DEBUG - Sheet 交通工程 次干路69cm m2 has 24 data rows
+2025-03-18T23:35:26.855438+08:00 - DEBUG - Category 'labor' has 2 items
+2025-03-18T23:35:26.855448+08:00 - DEBUG - Category 'machine' has 12 items
+2025-03-18T23:35:26.855454+08:00 - DEBUG - Category 'material' has 10 items
+2025-03-18T23:35:26.855613+08:00 - DEBUG - Category: labor, Total: 0.161368
+2025-03-18T23:35:26.855627+08:00 - DEBUG - Category: machine, Total: 0.333108
+2025-03-18T23:35:26.855637+08:00 - DEBUG - Category: material, Total: 25.850199999999997
+2025-03-18T23:35:26.855650+08:00 - DEBUG - Totals for sheet 交通工程 次干路69cm m2: Labor: 0.161368, Material: 25.850199999999997, Machine: 0.333108
+2025-03-18T23:35:26.855754+08:00 - DEBUG - Added 48 sub items for sheet 交通工程 次干路69cm m2
+2025-03-18T23:35:26.855768+08:00 - DEBUG - Processing sheet: 道路工程 主干路67cm m2 (id: 1, type: 道路工程)
+2025-03-18T23:35:26.855799+08:00 - DEBUG - Sheet 道路工程 主干路67cm m2 has 25 data rows
+2025-03-18T23:35:26.855839+08:00 - DEBUG - Category 'labor' has 2 items
+2025-03-18T23:35:26.855845+08:00 - DEBUG - Category 'machine' has 12 items
+2025-03-18T23:35:26.855849+08:00 - DEBUG - Category 'material' has 11 items
+2025-03-18T23:35:26.855928+08:00 - DEBUG - Category: labor, Total: 0.20534400000000003
+2025-03-18T23:35:26.855940+08:00 - DEBUG - Category: machine, Total: 0.420952
+2025-03-18T23:35:26.855949+08:00 - DEBUG - Category: material, Total: 27.7931
+2025-03-18T23:35:26.855963+08:00 - DEBUG - Totals for sheet 道路工程 主干路67cm m2: Labor: 0.20534400000000003, Material: 27.7931, Machine: 0.420952
+2025-03-18T23:35:26.856030+08:00 - DEBUG - Added 73 sub items for sheet 道路工程 主干路67cm m2
+2025-03-18T23:35:26.856037+08:00 - DEBUG - Processing sheet: 道路工程 主干路57cm m2 (id: 2, type: 道路工程)
+2025-03-18T23:35:26.856081+08:00 - DEBUG - Sheet 道路工程 主干路57cm m2 has 25 data rows
+2025-03-18T23:35:26.856110+08:00 - DEBUG - Category 'labor' has 2 items
+2025-03-18T23:35:26.856115+08:00 - DEBUG - Category 'machine' has 12 items
+2025-03-18T23:35:26.856120+08:00 - DEBUG - Category 'material' has 11 items
+2025-03-18T23:35:26.856204+08:00 - DEBUG - Category: labor, Total: 0.20534400000000003
+2025-03-18T23:35:26.856230+08:00 - DEBUG - Category: machine, Total: 0.420952
+2025-03-18T23:35:26.856239+08:00 - DEBUG - Category: material, Total: 27.7931
+2025-03-18T23:35:26.856248+08:00 - DEBUG - Totals for sheet 道路工程 主干路57cm m2: Labor: 0.20534400000000003, Material: 27.7931, Machine: 0.420952
+2025-03-18T23:35:26.856307+08:00 - DEBUG - Added 98 sub items for sheet 道路工程 主干路57cm m2
+2025-03-18T23:35:26.856315+08:00 - DEBUG - Final results: 6 total rows, 98 sub rows
+2025-03-18T23:35:34.487235+08:00 - DEBUG - Row selected: 1
+2025-03-18T23:35:34.487610+08:00 - DEBUG - Selected row project name: 次干路59cm m2
+2025-03-18T23:35:34.487631+08:00 - DEBUG - Showing sub items for sheet: 次干路59cm m2
+2025-03-18T23:35:34.487642+08:00 - DEBUG - Creating new sub items panel
+2025-03-18T23:35:34.487729+08:00 - DEBUG - Loading sub items for sheet: 次干路59cm m2
+2025-03-18T23:35:34.488191+08:00 - DEBUG - Found sheet_id: 3 for 次干路59cm m2
+2025-03-18T23:35:34.488248+08:00 - DEBUG - Sheet 次干路59cm m2 has 24 rows of data
+2025-03-18T23:35:34.488312+08:00 - DEBUG - Sheet has the following categories: ["labor", "material", "machine"]
+2025-03-18T23:35:34.488376+08:00 - DEBUG - Added 2 items for category labor
+2025-03-18T23:35:34.488442+08:00 - DEBUG - Added 10 items for category material
+2025-03-18T23:35:34.488507+08:00 - DEBUG - Added 12 items for category machine
+2025-03-18T23:35:34.488518+08:00 - DEBUG - Total sub items: 29
+2025-03-18T23:35:34.488530+08:00 - DEBUG - Setting rows in SubItemsTableDelegate, received rows: 29
+2025-03-18T23:35:34.488556+08:00 - DEBUG - Final number of rows in delegate: 28

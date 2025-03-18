@@ -1,15 +1,10 @@
-#[cfg(feature = "debug")]
-#[macro_export]
-macro_rules! debug {
-    ($($arg:tt)*) => {
-        dbg!($($arg)*)
-    };
-}
+// Re-export log macros
+pub use log::{debug, error, info, warn, trace};
 
-#[cfg(not(feature = "debug"))]
+// For backward compatibility
 #[macro_export]
 macro_rules! debug {
     ($($arg:tt)*) => {
-        ()
+        log::debug!($($arg)*)
     };
 } 

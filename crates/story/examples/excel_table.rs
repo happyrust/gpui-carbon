@@ -8,6 +8,12 @@ use gpui::{
 use gpui_component::{
     button::Button, dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView}, dropdown::{Dropdown, DropdownEvent}, h_flex, input::TextInput, label::Label, notification::{Notification, NotificationType}, popup_menu::PopupMenuExt, scroll::ScrollbarShow, table::{self, Table, TableDelegate, TableEvent}, v_flex, ContextModal, Sizable, Theme
 };
+use log::{debug, error, info, LevelFilter};
+use log4rs::{
+    append::file::FileAppender,
+    config::{Appender, Config, Root},
+    encode::pattern::PatternEncoder,
+};
 use rusqlite::{params, Connection, Result as SqliteResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -16,7 +22,7 @@ use std::fs;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
-use story::{debug, Assets, Story};
+use story::{Assets, Story};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, JsonSchema, Serialize)]
 enum Category {
@@ -609,7 +615,7 @@ impl IndicatorStory {
                                         category_counts.insert(Category::Machine, 0);
                                         category_counts.insert(Category::None, 0);
 
-                                        debug!("Starting to process rows for sheet:", sheet_name);
+                                        debug!("Starting to process rows for sheet: {}", sheet_name);
 
                                         // Insert data
                                         for row in rows.iter().skip(header_idx + 1) {
@@ -661,7 +667,7 @@ impl IndicatorStory {
                                                 if let Some(code) = row_data.get_mut("编码") {
                                                     if !code.starts_with('L') && !code.starts_with('M') && !code.starts_with('E') {
                                                         *code = format!("{}{}", current_category.prefix(), code);
-                                                        debug!("Added prefix to code:", code, "Category:", &current_category);
+                                                        debug!("Added prefix to code: {}, Category: {}", code, &current_category.to_string());
                                                     }
                                                 }
 
@@ -685,11 +691,11 @@ impl IndicatorStory {
                                         }
 
                                         // Print category statistics
-                                        debug!("Category counts for sheet:", sheet_name);
-                                        debug!("Labor items:", category_counts[&Category::Labor]);
-                                        debug!("Material items:", category_counts[&Category::Material]);
-                                        debug!("Machine items:", category_counts[&Category::Machine]);
-                                        debug!("Uncategorized items:", category_counts[&Category::None]);
+                                        debug!("Category counts for sheet: {}", sheet_name);
+                                        debug!("Labor items: {}", category_counts[&Category::Labor]);
+                                        debug!("Material items: {}", category_counts[&Category::Material]);
+                                        debug!("Machine items: {}", category_counts[&Category::Machine]);
+                                        debug!("Uncategorized items: {}", category_counts[&Category::None]);
 
                                         success = true;
                                     }
@@ -2151,13 +2157,42 @@ impl TableDelegate for ResultDetailsTableDelegate {
     }
 }
 
+// 初始化日志系统
+fn setup_logger() -> Result<(), Box<dyn std::error::Error>> {
+    // 创建logs目录
+    fs::create_dir_all("logs").expect("Failed to create logs directory");
+    
+    // 配置日志输出到文件
+    let logfile = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new("{d} - {l} - {m}{n}")))
+        .build("logs/excel_table.log")?;
+
+    // 创建日志配置
+    let config = Config::builder()
+        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+        .build(Root::builder().appender("logfile").build(LevelFilter::Debug))?;
+
+    // 应用配置
+    log4rs::init_config(config)?;
+    
+    Ok(())
+}
+
 fn main() {
+    // 初始化日志系统
+    if let Err(e) = setup_logger() {
+        eprintln!("Failed to initialize logger: {}", e);
+    }
+    
+    info!("Starting Excel Table application");
+    
     let app = Application::new().with_assets(Assets);
 
     app.run(move |cx| {
         story::init(cx);
         cx.activate(true);
         story::create_new_window("碳排放计算程序", IndicatorStory::new_view, cx);
+        info!("Application window created");
     });
 }
 
