@@ -57,7 +57,7 @@ jobs:
       shell: bash
         
     - name: Upload artifacts
-      uses: actions/upload-artifact@v2  # 修改为 v2 版本
+      uses: actions/upload-artifact@v4
       with:
         name: excel-table-windows-${{ steps.date.outputs.date }}
         path: release/
