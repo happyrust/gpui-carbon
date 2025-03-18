@@ -79,50 +79,67 @@ impl TabVariant {
             Size::Large => match self {
                 TabVariant::Tab | TabVariant::Outline | TabVariant::Pill => px(36.),
                 TabVariant::Segmented => px(28.),
-                TabVariant::Underline => px(30.),
+                TabVariant::Underline => px(32.),
             },
             _ => match self {
                 TabVariant::Tab => px(30.),
                 TabVariant::Outline | TabVariant::Pill => px(26.),
                 TabVariant::Segmented => px(24.),
-                TabVariant::Underline => px(24.),
+                TabVariant::Underline => px(26.),
             },
         }
     }
 
+    /// Default px(12) to match panel px_3, See [`crate::dock::TabPanel`]
     fn inner_paddings(&self, size: Size) -> Edges<Pixels> {
-        let mut px = match size {
+        let mut padding_x = match size {
             Size::XSmall => px(8.),
-            Size::Small => px(12.),
-            Size::Large => px(20.),
-            _ => px(16.),
+            Size::Small => px(10.),
+            Size::Large => px(16.),
+            _ => px(12.),
         };
 
-        if *self == TabVariant::Segmented {
-            px = px / 2.;
+        if matches!(self, TabVariant::Underline) {
+            padding_x = padding_x / 2.;
         }
 
         Edges {
-            left: px,
-            right: px,
+            left: padding_x,
+            right: padding_x,
             ..Default::default()
         }
     }
 
     fn inner_margins(&self, size: Size) -> Edges<Pixels> {
         match size {
-            Size::XSmall => Edges::all(px(0.)),
+            Size::XSmall => match self {
+                TabVariant::Underline => Edges {
+                    top: px(1.),
+                    bottom: px(2.),
+                    ..Default::default()
+                },
+                _ => Edges::all(px(0.)),
+            },
             Size::Small => match self {
                 TabVariant::Underline => Edges {
-                    bottom: px(2.),
+                    top: px(2.),
+                    bottom: px(3.),
+                    ..Default::default()
+                },
+                _ => Edges::all(px(0.)),
+            },
+            Size::Large => match self {
+                TabVariant::Underline => Edges {
+                    top: px(5.),
+                    bottom: px(6.),
                     ..Default::default()
                 },
                 _ => Edges::all(px(0.)),
             },
             _ => match self {
                 TabVariant::Underline => Edges {
-                    top: px(5.),
-                    bottom: px(3.),
+                    top: px(3.),
+                    bottom: px(4.),
                     ..Default::default()
                 },
                 _ => Edges::all(px(0.)),
@@ -204,7 +221,7 @@ impl TabVariant {
             },
             TabVariant::Pill => TabStyle {
                 fg: cx.theme().secondary_foreground,
-                bg: cx.theme().secondary_hover,
+                bg: cx.theme().secondary,
                 radius: px(99.),
                 ..Default::default()
             },
@@ -223,7 +240,7 @@ impl TabVariant {
                 fg: cx.theme().tab_foreground,
                 bg: cx.theme().transparent,
                 radius: px(0.),
-                inner_bg: cx.theme().secondary,
+                inner_bg: cx.theme().transparent,
                 inner_radius: cx.theme().radius,
                 borders: Edges {
                     bottom: px(2.),

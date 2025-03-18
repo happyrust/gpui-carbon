@@ -173,8 +173,20 @@ impl RenderOnce for TabBar {
                 (cx.theme().tab_bar_segmented, padding, px(2.))
             }
             TabVariant::Underline => {
-                let padding = Edges::all(px(0.));
-                (cx.theme().transparent, padding, default_gap / 2.)
+                // This gap is same as the tab inner_paddings
+                let gap = match self.size {
+                    Size::XSmall => px(8.),
+                    Size::Small => px(10.),
+                    Size::Large => px(16.),
+                    _ => px(12.),
+                };
+
+                let padding = Edges {
+                    left: gap,
+                    right: gap,
+                    ..Default::default()
+                };
+                (cx.theme().transparent, padding, gap)
             }
         };
 
@@ -234,12 +246,9 @@ impl RenderOnce for TabBar {
                                     })
                             }),
                     )
-                    .when(
-                        self.suffix.is_some() && self.variant == TabVariant::Tab
-                            || self.variant == TabVariant::Underline
-                            || self.variant == TabVariant::Pill,
-                        |this| this.child(self.last_empty_space),
-                    ),
+                    .when(self.suffix.is_some(), |this| {
+                        this.child(self.last_empty_space)
+                    }),
             )
             .when_some(self.suffix, |this, suffix| this.child(suffix))
     }

@@ -224,6 +224,8 @@ pub struct TextInput {
     pub(super) cleanable: bool,
     pub(super) size: Size,
     pub(super) rows: usize,
+    /// For special case, e.g.: NumberInput + - button
+    pub(super) no_gap: bool,
     pub(super) height: Option<gpui::DefiniteLength>,
     pattern: Option<regex::Regex>,
     validate: Option<Box<dyn Fn(&str) -> bool + 'static>>,
@@ -282,6 +284,7 @@ impl TextInput {
             loading: false,
             prefix: None,
             suffix: None,
+            no_gap: false,
             size: Size::Medium,
             height: None,
             pattern: None,
@@ -471,6 +474,35 @@ impl TextInput {
         cx.notify();
     }
 
+    /// Insert text at the current cursor position.
+    ///
+    /// And the cursor will be moved to the end of inserted text.
+    pub fn insert(
+        &mut self,
+        text: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let text: SharedString = text.into();
+        let range = self.range_to_utf16(&(self.cursor_offset()..self.cursor_offset()));
+        self.replace_text_in_range(Some(range), &text, window, cx);
+        self.selected_range = self.selected_range.end..self.selected_range.end;
+    }
+
+    /// Replace text at the current cursor position.
+    ///
+    /// And the cursor will be moved to the end of replaced text.
+    pub fn replace(
+        &mut self,
+        text: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let text: SharedString = text.into();
+        self.replace_text_in_range(None, &text, window, cx);
+        self.selected_range = self.selected_range.end..self.selected_range.end;
+    }
+
     fn replace_text(
         &mut self,
         text: impl Into<SharedString>,
@@ -580,6 +612,14 @@ impl TextInput {
     /// Set true to show the clear button when the input field is not empty.
     pub fn cleanable(mut self) -> Self {
         self.cleanable = true;
+        self
+    }
+
+    /// Set true to not use gap between input and prefix, suffix, and clear button.
+    ///
+    /// Default: false
+    pub(super) fn no_gap(mut self) -> Self {
+        self.no_gap = true;
         self
     }
 
@@ -1596,6 +1636,14 @@ impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         const LINE_HEIGHT: Rems = Rems(1.25);
         let focused = self.focus_handle.is_focused(window);
+        let mut gap_x = match self.size {
+            Size::Small => px(4.),
+            Size::Large => px(12.),
+            _ => px(8.),
+        };
+        if self.no_gap {
+            gap_x = px(0.);
+        }
 
         let prefix = self.prefix.as_ref().map(|build| build(window, cx));
         let suffix = self.suffix.as_ref().map(|build| build(window, cx));
@@ -1672,12 +1720,12 @@ impl Render for TextInput {
             .when(prefix.is_none(), |this| this.input_pl(self.size))
             .when(suffix.is_none(), |this| this.input_pr(self.size))
             .children(prefix)
-            .gap_1()
+            .gap(gap_x)
             .items_center()
             .child(
                 div()
                     .id("TextElement")
-                    .w_full()
+                    .flex_1()
                     .when(self.is_multi_line(), |this| this.h_full())
                     .flex_grow()
                     .overflow_x_hidden()

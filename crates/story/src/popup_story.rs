@@ -262,16 +262,33 @@ impl Render for PopupStory {
                                     .separator()
                                     .menu_with_icon("Search", IconName::Search, Box::new(SearchAll))
                                     .separator()
-                                    .menu_with_element(
+                                    .menu_element(Box::new(Info(0)), |_, cx| {
+                                        v_flex().child("Custom Element").child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child("THis is sub-title"),
+                                        )
+                                    })
+                                    .menu_element_with_check(checked, Box::new(Info(0)), |_, cx| {
+                                        h_flex().gap_1().child("Custom Element").child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child("checked"),
+                                        )
+                                    })
+                                    .menu_element_with_icon(
+                                        IconName::Info,
+                                        Box::new(Info(0)),
                                         |_, cx| {
-                                            v_flex().gap_1().child("Custom Element").child(
+                                            h_flex().gap_1().child("Custom").child(
                                                 div()
                                                     .text_sm()
                                                     .text_color(cx.theme().muted_foreground)
-                                                    .child("THis is sub-title"),
+                                                    .child("element"),
                                             )
                                         },
-                                        Box::new(Info(0)),
                                     )
                                     .separator()
                                     .submenu("Links", window, cx, |menu, _, _| {
@@ -297,7 +314,7 @@ impl Render for PopupStory {
                                         Box::new(Info(i)),
                                     )
                                 }
-                                this
+                                this.min_w(px(100.))
                             }),
                     )
                     .child(self.message.clone()),

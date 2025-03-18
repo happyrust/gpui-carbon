@@ -604,9 +604,8 @@ impl Node {
             Node::Root { children } => div()
                 .children({
                     let children_len = children.len();
-
-                    children.into_iter().enumerate().map(move |(ix, c)| {
-                        let is_last_child = ix == children_len - 1;
+                    children.into_iter().enumerate().map(move |(index, c)| {
+                        let is_last_child = index == children_len - 1;
                         c.render(None, is_last_child, text_view_style, window, cx)
                     })
                 })
