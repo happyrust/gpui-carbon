@@ -1191,11 +1191,16 @@ impl ResultTableDelegate {
         // 获取所有工作表并按类型分组
         let mut sheets_stmt = conn.prepare(
             "SELECT id, name, 
+             -- Get the type from the first part of the sheet name before a space
              CASE 
-                WHEN name LIKE '%道路工程%' THEN '道路工程'
-                WHEN name LIKE '%交通工程%' THEN '交通工程'
-                ELSE '其他'
-             END as type
+                WHEN instr(name, ' ') > 0 THEN substr(name, 1, instr(name, ' ')-1)
+                ELSE name
+             END as type,
+             -- Extract the specific name part (everything after the first space)
+             CASE
+                WHEN instr(name, ' ') > 0 THEN substr(name, instr(name, ' ')+1)
+                ELSE ''
+             END as short_name
              FROM sheets 
              ORDER BY type, id"
         )?;
@@ -1204,7 +1209,8 @@ impl ResultTableDelegate {
             Ok((
                 row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?
             ))
         })?;
 
@@ -1223,7 +1229,7 @@ impl ResultTableDelegate {
             return Ok(());
         }
 
-        for (sheet_id, mut sheet_name, mut sheet_type) in sheet_results {
+        for (sheet_id, sheet_name, sheet_type, short_name) in sheet_results {
             debug!("Processing sheet: {} (id: {}, type: {})", &sheet_name, sheet_id, &sheet_type);
             
             // 如果是新的工程类型，添加类型标题行
@@ -1335,7 +1341,7 @@ impl ResultTableDelegate {
                 序号: format!("{}", self.total_rows.len() + 1),
                 编码: "".to_string(),
                 名称及规格: "".to_string(),
-                项目名称: sheet_name.clone(),
+                项目名称: short_name.trim().to_string(),
                 单位: "m2".to_string(),
                 可研估算: "用户填写".to_string(),  // 工程量，等待用户填写
                 碳排放指数: format!("D{}*I{}", self.total_rows.len() + 1, self.total_rows.len() + 1),  // 总碳排放量公式
@@ -1417,17 +1423,24 @@ impl TableDelegate for ResultTableDelegate {
         _: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
         let row = &self.total_rows[row_ix];
+        
+        // Check if this is a category row - now more dynamic
+        // It's a category row if:
+        // 1. The name doesn't contain spaces (single word)
+        // 2. Any field other than 序号 and 项目名称 is empty
+        let is_category_row = !row.项目名称.contains(' ') && row.单位.is_empty() && row.碳排放指数.is_empty();
+        
         let value = match col_ix {
             0 => row.序号.clone(),
-            1 => row.项目名称.clone(),
-            2 => row.单位.clone(),
-            3 => row.可研估算.clone(),
-            4 => row.碳排放指数.clone(),
-            5 => "".to_string(),  // 主要人材机耗量列留空
-            6 => row.人工.clone(),
-            7 => row.材料.clone(),
-            8 => row.机械.clone(),
-            9 => row.小计.clone(),
+            1 => row.项目名称.clone(), // Already correctly formatted from the SQL query
+            2 => if is_category_row { String::new() } else { row.单位.clone() },
+            3 => if is_category_row { String::new() } else { row.可研估算.clone() },
+            4 => if is_category_row { String::new() } else { row.碳排放指数.clone() },
+            5 => if is_category_row { String::new() } else { String::new() }, // 主要人材机耗量列留空
+            6 => if is_category_row { String::new() } else { row.人工.clone() },
+            7 => if is_category_row { String::new() } else { row.材料.clone() },
+            8 => if is_category_row { String::new() } else { row.机械.clone() },
+            9 => if is_category_row { String::new() } else { row.小计.clone() },
             _ => String::new(),
         };
 
@@ -1506,8 +1519,9 @@ impl CarbonResultPanel {
                         if let Some(row) = this.table.read(cx).delegate().total_rows.get(*row_ix) {
                             debug!("Selected row project name: {}", &row.项目名称);
                             
-                            // 如果是工程类型行（通常项目名称是"道路工程"、"交通工程"等），不显示子项
-                            if row.项目名称 == "道路工程" || row.项目名称 == "交通工程" || row.项目名称 == "其他" {
+                            // 如果是工程类型行（只有类型名，没有空格），不显示子项
+                            let is_category_row = !row.项目名称.contains(' ') && row.单位.is_empty();
+                            if is_category_row {
                                 debug!("Skipping category row");
                                 return;
                             }
@@ -1553,7 +1567,6 @@ impl CarbonResultPanel {
                             
                             // 从数据库加载该工作表的详细数据
                             if let Some(panel) = &this.sub_items_panel {
-                                // 获取工作表ID并加载该表的子项目数据
                                 this.load_sub_items_for_sheet(&sheet_name, panel, window, cx);
                             }
                         }
@@ -1583,13 +1596,46 @@ impl CarbonResultPanel {
         // Connect to database
         match Connection::open(&db_path) {
             Ok(conn) => {
-                // First get sheet_id
-                match conn.query_row(
-                    "SELECT id FROM sheets WHERE name = ?",
-                    params![sheet_name],
-                    |row| row.get::<_, i64>(0)
-                ) {
-                    Ok(sheet_id) => {
+                // First get sheet_id - need to look for sheets containing the short_name
+                // We'll first need to get all sheet names to find the right one
+                let sheet_id = match conn.prepare("SELECT id, name FROM sheets") {
+                    Ok(mut stmt) => {
+                        let mut matched_id = None;
+                        
+                        let rows = match stmt.query_map([], |row| {
+                            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                        }) {
+                            Ok(rows) => rows,
+                            Err(e) => {
+                                debug!("Error querying sheet names: {}", &e);
+                                return;
+                            }
+                        };
+                        
+                        // Find sheet with this specific short name
+                        for row_result in rows {
+                            if let Ok((id, name)) = row_result {
+                                if let Some(pos) = name.find(' ') {
+                                    let sheet_short_name = &name[pos+1..];
+                                    if sheet_short_name == sheet_name {
+                                        matched_id = Some(id);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        matched_id
+                    },
+                    Err(e) => {
+                        debug!("Error preparing sheet query: {}", &e);
+                        return;
+                    }
+                };
+
+                // Use the sheet_id if found
+                match sheet_id {
+                    Some(sheet_id) => {
                         debug!("Found sheet_id: {} for {}", sheet_id, sheet_name);
                         
                         // First ensure we have data for this sheet - help debug issues
@@ -1600,7 +1646,7 @@ impl CarbonResultPanel {
                         ) {
                             Ok(count) => count,
                             Err(e) => {
-                                debug!("Error checking row count: {}", e);
+                                debug!("Error checking row count: {}", &e);
                                 0
                             }
                         };
@@ -1628,7 +1674,7 @@ impl CarbonResultPanel {
                             ) {
                                 Ok(stmt) => stmt,
                                 Err(e) => {
-                                    debug!("Error preparing category query: {}", e);
+                                    debug!("Error preparing category query: {}", &e);
                                     return;
                                 }
                             };
@@ -1636,7 +1682,7 @@ impl CarbonResultPanel {
                             let rows = match stmt.query_map(params![sheet_id], |row| row.get(0)) {
                                 Ok(rows) => rows,
                                 Err(e) => {
-                                    debug!("Error querying categories: {}", e);
+                                    debug!("Error querying categories: {}", &e);
                                     return;
                                 }
                             };
@@ -1646,7 +1692,7 @@ impl CarbonResultPanel {
                                 match row {
                                     Ok(category) => result.push(category),
                                     Err(e) => {
-                                        debug!("Error reading category: {}", e);
+                                        debug!("Error reading category: {}", &e);
                                         continue;
                                     }
                                 }
@@ -1716,7 +1762,7 @@ impl CarbonResultPanel {
                                                         items.push(row);
                                                     },
                                                     Err(e) => {
-                                                        debug!("Error reading category item: {}", e);
+                                                        debug!("Error reading category item: {}", &e);
                                                         continue;
                                                     }
                                                 }
@@ -1733,13 +1779,13 @@ impl CarbonResultPanel {
                                             }
                                         },
                                         Err(e) => {
-                                            debug!("Error querying category items: {}", e);
+                                            debug!("Error querying category items: {}", &e);
                                             continue;
                                         }
                                     }
                                 },
                                 Err(e) => {
-                                    debug!("Error preparing category items query: {}", e);
+                                    debug!("Error preparing category items query: {}", &e);
                                     continue;
                                 }
                             }
@@ -1771,10 +1817,10 @@ impl CarbonResultPanel {
                             cx,
                         );
                     },
-                    Err(e) => {
-                        debug!("Error finding sheet_id for {}: {}", sheet_name, e);
+                    None => {
+                        debug!("No matching sheet found for {}", sheet_name);
                         window.push_notification(
-                            Notification::new(format!("未找到工作表: {}", sheet_name))
+                            Notification::new(format!("未找到匹配的工作表: {}", sheet_name))
                                 .with_type(NotificationType::Error),
                             cx,
                         );
