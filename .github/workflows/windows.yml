@@ -12,7 +12,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-C target-feature=+crt-static"
-  RUSTUP_TOOLCHAIN: nightly
 
 jobs:
   build:
@@ -22,7 +21,7 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Install nightly rust toolchain
-      uses: dtolnay/rust-toolchain@nightly
+      uses: dtolnay/rust-toolchain@master
       with:
         toolchain: nightly
         components: rustfmt, clippy
@@ -43,7 +42,7 @@ jobs:
           ${{ runner.os }}-cargo-nightly-
           
     - name: Build excel_table example
-      run: cargo build --release --example excel_table
+      run: cargo +nightly build --release --example excel_table
       
     - name: Create Release Folder
       run: |
