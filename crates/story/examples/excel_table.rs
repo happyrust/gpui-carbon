@@ -79,17 +79,11 @@ impl Category {
     }
 }
 
-#[derive(Clone, Debug)]
-struct ExcelRow {
+#[derive(Clone)]
+struct IndicatorRow {
     id: usize,
     data: HashMap<String, String>,
 }
-
-#[derive(Clone, Debug, PartialEq, Deserialize, JsonSchema, Serialize)]
-pub struct SetProjectType(String);
-
-#[derive(Clone, Debug, PartialEq, Deserialize, JsonSchema, Serialize)]
-pub struct SetRoadType(String);
 
 #[derive(Clone, Debug, PartialEq, Deserialize, JsonSchema, Serialize)]
 pub struct ChangeSheet {
@@ -103,18 +97,16 @@ pub struct UpdateResultTable;
 pub struct UpdateTypesUIEvent;
 
 impl_actions!(
-    excel_table,
+    indicator_table,
     [
-        SetProjectType,
-        SetRoadType,
         ChangeSheet,
         UpdateResultTable,
         UpdateTypesUIEvent
     ]
 );
 
-struct ExcelTableDelegate {
-    rows: Vec<ExcelRow>,
+struct IndicatorTableDelegate {
+    rows: Vec<IndicatorRow>,
     columns: Vec<String>,
     size: Size<Pixels>,
     loop_selection: bool,
@@ -130,7 +122,7 @@ struct ExcelTableDelegate {
     visible_cols: Range<usize>,
 }
 
-impl ExcelTableDelegate {
+impl IndicatorTableDelegate {
     fn new() -> Self {
         Self {
             rows: Vec::new(),
@@ -155,7 +147,7 @@ impl ExcelTableDelegate {
         self.rows = data
             .into_iter()
             .enumerate()
-            .map(|(id, data)| ExcelRow { id, data })
+            .map(|(id, data)| IndicatorRow { id, data })
             .collect();
         self.eof = true;
         self.loading = false;
@@ -163,7 +155,7 @@ impl ExcelTableDelegate {
     }
 }
 
-impl TableDelegate for ExcelTableDelegate {
+impl TableDelegate for IndicatorTableDelegate {
     fn cols_count(&self, _: &App) -> usize {
         self.columns.len()
     }
@@ -277,28 +269,26 @@ impl TableDelegate for ExcelTableDelegate {
 }
 
 #[derive(Clone)]
-pub struct ExcelStory {
+pub struct IndicatorStory {
     dock_area: Entity<DockArea>,
-    table: Entity<Table<ExcelTableDelegate>>,
+    table: Entity<Table<IndicatorTableDelegate>>,
     current_sheet: Option<String>,
     required_columns: Vec<String>,
     focus_handle: FocusHandle,
-    project_type: String,
-    road_type: String,
     db_path: String,
 }
 
-impl Story for ExcelStory {
+impl Story for IndicatorStory {
     fn title() -> &'static str {
-        "Excel Table"
+        "Indicator Table"
     }
 
     fn description() -> &'static str {
-        "A table component that can display Excel file data with configurable columns"
+        "A table component that can display indicator data with configurable columns"
     }
 
     fn klass() -> &'static str {
-        "ExcelStory"
+        "IndicatorStory"
     }
 
     fn new_view(window: &mut Window, cx: &mut App) -> Entity<Self> {
@@ -306,16 +296,16 @@ impl Story for ExcelStory {
     }
 }
 
-impl Focusable for ExcelStory {
+impl Focusable for IndicatorStory {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl EventEmitter<UpdateResultTable> for ExcelStory {}
-impl EventEmitter<UpdateTypesUIEvent> for ExcelStory {}
+impl EventEmitter<UpdateResultTable> for IndicatorStory {}
+impl EventEmitter<UpdateTypesUIEvent> for IndicatorStory {}
 
-impl ExcelStory {
+impl IndicatorStory {
     pub fn view(window: &mut Window, cx: &mut Context<Self>) -> Entity<Self> {
         cx.new(|cx| Self::new(window, cx))
     }
@@ -335,7 +325,7 @@ impl ExcelStory {
             "合计".to_string(),
         ];
 
-        let delegate = ExcelTableDelegate::new();
+        let delegate = IndicatorTableDelegate::new();
         let table = cx.new(|cx| Table::new(delegate, window, cx));
 
         // Initialize dock area
@@ -344,7 +334,7 @@ impl ExcelStory {
         // Create data directory if it doesn't exist
         let data_dir = "data";
         fs::create_dir_all(data_dir).expect("Failed to create data directory");
-        let db_path = format!("{}/excel_data.db", data_dir);
+        let db_path = format!("{}/indicator_data.db", data_dir);
 
         // Initialize database
         Self::init_carbonref_database(&db_path).expect("Failed to initialize 人材机数据库 ");
@@ -372,7 +362,7 @@ impl ExcelStory {
 
             // Right panel (Table panel)
             let right_panel = DockItem::tab(
-                InputeTablePanel::view(story_entity.clone(), window, cx),
+                IndicatorTablePanel::view(story_entity.clone(), window, cx),
                 &weak_dock_area,
                 window,
                 cx,
@@ -384,21 +374,19 @@ impl ExcelStory {
             dock_area.set_right_dock(right_panel, Some(px(600.)), true, window, cx);
         });
 
-        let excel_story = Self {
+        let indicator_story = Self {
             dock_area,
             table,
             current_sheet,
             required_columns,
             focus_handle,
-            project_type: String::new(),
-            road_type: String::new(),
             db_path,
         };
 
         // Load resource data
-        excel_story.load_resource_data("assets/excel/人材机数据库.xlsx", window, cx);
+        indicator_story.load_resource_data("assets/excel/人材机数据库.xlsx", window, cx);
 
-        excel_story
+        indicator_story
     }
 
     fn init_carbonref_database(db_path: &str) -> SqliteResult<()> {
@@ -536,77 +524,6 @@ impl ExcelStory {
             data.push(row_data);
         }
         Ok((self.required_columns.clone(), data))
-    }
-
-    /// 从数据库中提取所有工程类型和道路类型
-    fn extract_project_and_road_types(&self) -> SqliteResult<(Vec<String>, Vec<String>)> {
-        let conn = Connection::open(&self.db_path)?;
-        let mut stmt = conn.prepare("SELECT name FROM sheets ORDER BY id")?;
-
-        let mut project_types = std::collections::HashSet::new();
-        let mut road_types = std::collections::HashSet::new();
-
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-
-        for sheet_name in rows.flatten() {
-            if let Some((project_type, road_type)) = Self::parse_sheet_name(&sheet_name) {
-                project_types.insert(project_type);
-                road_types.insert(road_type);
-            }
-        }
-
-        let mut project_types: Vec<_> = project_types.into_iter().collect();
-        let mut road_types: Vec<_> = road_types.into_iter().collect();
-        project_types.sort();
-        road_types.sort();
-
-        Ok((project_types, road_types))
-    }
-
-    /// 从工作表名称中解析出工程类型和道路类型
-    fn parse_sheet_name(sheet_name: &str) -> Option<(String, String)> {
-        // 假设格式为: "xxx【project_type road_type】"
-        // todo 空格划分？
-        let mut names = sheet_name.trim().split_whitespace().into_iter();
-        let project_type = names.next()?.to_string();
-        let road_type = names.fold(None, |mut acc: Option<String>, s| {
-            if acc.is_none() {
-                acc = Some(s.to_string());
-            } else {
-                acc.as_mut().unwrap().push_str(s);
-            }
-            acc
-        })?;
-
-        // debug!()
-
-        Some((project_type, road_type))
-    }
-
-    fn update_types_ui(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Ok((project_types, road_types)) = self.extract_project_and_road_types() {
-            cx.emit(UpdateTypesUIEvent);
-            //send event to ParamFormPane
-            // 更新工程类型下拉框
-            // if let Some(panel) = self.dock_area.find_("ParamFormPane", cx) {
-            //     panel.update(cx, |panel, cx| {
-            //         panel.project_type_dropdown.update(cx, |dropdown, cx| {
-            //             dropdown.set_items(
-            //                 project_types.into_iter().map(SharedString::from).collect(),
-            //                 window,
-            //                 cx,
-            //             );
-            //         });
-            //         panel.road_type_dropdown.update(cx, |dropdown, cx| {
-            //             dropdown.set_items(
-            //                 road_types.into_iter().map(SharedString::from).collect(),
-            //                 window,
-            //                 cx,
-            //             );
-            //         });
-            //     });
-            // }
-        }
     }
 
     fn load_excel(&mut self, file_path: &str, window: &mut Window, cx: &mut Context<Self>) {
@@ -771,9 +688,6 @@ impl ExcelStory {
                                 .unwrap()
                                 .map(|r| r.unwrap())
                                 .collect();
-
-                            // Update dropdowns with new project and road types
-                            self.update_types_ui(window, cx);
 
                             // Load first sheet
                             if let Some(first_sheet) = sheet_names.first() {
@@ -959,29 +873,25 @@ impl ExcelStory {
     }
 }
 
-impl Render for ExcelStory {
+impl Render for IndicatorStory {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
-            // .on_action(cx.listener(Self::on_set_project_type))
-            // .on_action(cx.listener(Self::on_set_road_type))
             .on_action(cx.listener(Self::on_change_sheet))
             .child(self.dock_area.clone())
     }
 }
 
 struct ParamFormPane {
-    story: Entity<ExcelStory>,
+    story: Entity<IndicatorStory>,
     focus_handle: FocusHandle,
-    project_type_dropdown: Entity<Dropdown<Vec<SharedString>>>,
-    road_type_dropdown: Entity<Dropdown<Vec<SharedString>>>,
     file_path_input: Entity<TextInput>,
-    carbon_ref_input: Entity<TextInput>,  // 新增人材机数据文件输入
+    carbon_ref_input: Entity<TextInput>,
 }
 
 impl ParamFormPane {
     pub fn view(
-        story: Entity<ExcelStory>,
+        story: Entity<IndicatorStory>,
         window: &mut Window,
         cx: &mut Context<DockArea>,
     ) -> Entity<Self> {
@@ -997,82 +907,12 @@ impl ParamFormPane {
             input
         });
 
-        let project_types = vec!["道路工程".into(), "交通工程".into()];
-        let project_type_dropdown = cx.new(|cx| {
-            Dropdown::new("project-type", project_types, None, window, cx)
-                .small()
-                .placeholder("请选择工程类型")
-        });
-
-        let road_types = vec!["主干路 62 m2".into(), "次干路59cm m2".into()];
-        let road_type_dropdown = cx.new(|cx| {
-            Dropdown::new("road-type", road_types, None, window, cx)
-                .small()
-                .placeholder("请选择道路类型")
-        });
-
-        let view = cx.new(|cx| {
-            let story = story.clone();
-            let project_type_dropdown = project_type_dropdown.clone();
-            let road_type_dropdown = road_type_dropdown.clone();
-            let file_path_input = file_path_input.clone();
-            let carbon_ref_input = carbon_ref_input.clone();
-
-            let panel = Self {
-                story: story.clone(),
-                focus_handle: cx.focus_handle(),
-                project_type_dropdown: project_type_dropdown.clone(),
-                road_type_dropdown: road_type_dropdown.clone(),
-                file_path_input: file_path_input.clone(),
-                carbon_ref_input: carbon_ref_input.clone(),
-            };
-
-            // Subscribe to dropdown events
-            cx.subscribe_in(&project_type_dropdown, window, {
-                let story = story.clone();
-                move |_, _dropdown, event: &DropdownEvent<Vec<SharedString>>, _window, cx| {
-                    if let DropdownEvent::Confirm(Some(value)) = event {
-                        story.update(cx, |story, cx| {
-                            story.project_type = value.to_string();
-                            // 只有当两个类型都已选择时才发送更新事件
-                            if !story.project_type.is_empty() && !story.road_type.is_empty() {
-                                cx.emit(UpdateResultTable);
-                            }
-                        });
-                    }
-                }
-            })
-            .detach();
-
-            cx.subscribe_in(&road_type_dropdown, window, {
-                let story = story.clone();
-                move |_, _dropdown, event: &DropdownEvent<Vec<SharedString>>, _window, cx| {
-                    if let DropdownEvent::Confirm(Some(value)) = event {
-                        story.update(cx, |story, cx| {
-                            story.road_type = value.to_string();
-                            // 只有当两个类型都已选择时才发送更新事件
-                            if !story.project_type.is_empty() && !story.road_type.is_empty() {
-                                cx.emit(UpdateResultTable);
-                            }
-                        });
-                    }
-                }
-            })
-            .detach();
-
-            // UpdateTypesUIEvent
-            cx.subscribe_in(&story, window, {
-                let story = story.clone();
-                move |_, _dropdown, event: &UpdateTypesUIEvent, _window, cx| {
-                    debug!("UpdateTypesUIEvent");
-                }
-            })
-            .detach();
-
-            panel
-        });
-
-        view
+        cx.new(|cx| Self {
+            story: story.clone(),
+            focus_handle: cx.focus_handle(),
+            file_path_input: file_path_input.clone(),
+            carbon_ref_input: carbon_ref_input.clone(),
+        })
     }
 }
 
@@ -1231,30 +1071,18 @@ impl Render for ParamFormPane {
                                     ),
                             ),
                     )
-                    .child(
-                        v_flex()
-                            .gap_2()
-                            .child(Label::new("工程类型"))
-                            .child(self.project_type_dropdown.clone()),
-                    )
-                    .child(
-                        v_flex()
-                            .gap_2()
-                            .child(Label::new("道路类型"))
-                            .child(self.road_type_dropdown.clone()),
-                    ),
             )
     }
 }
 
-struct InputeTablePanel {
-    story: Entity<ExcelStory>,
+struct IndicatorTablePanel {
+    story: Entity<IndicatorStory>,
     focus_handle: FocusHandle,
 }
 
-impl InputeTablePanel {
+impl IndicatorTablePanel {
     pub fn view(
-        story: Entity<ExcelStory>,
+        story: Entity<IndicatorStory>,
         _window: &mut Window,
         cx: &mut Context<DockArea>,
     ) -> Entity<Self> {
@@ -1266,9 +1094,9 @@ impl InputeTablePanel {
     }
 }
 
-impl EventEmitter<PanelEvent> for InputeTablePanel {}
+impl EventEmitter<PanelEvent> for IndicatorTablePanel {}
 
-impl Panel for InputeTablePanel {
+impl Panel for IndicatorTablePanel {
     fn panel_name(&self) -> &'static str {
         "TablePanel"
     }
@@ -1278,13 +1106,13 @@ impl Panel for InputeTablePanel {
     }
 }
 
-impl Focusable for InputeTablePanel {
+impl Focusable for IndicatorTablePanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for InputeTablePanel {
+impl Render for IndicatorTablePanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let this = self.story.read(cx);
         div().size_full().child(this.table.clone())
@@ -1346,195 +1174,61 @@ impl ResultTableDelegate {
         }
     }
 
-    fn update_data(
-        &mut self,
-        project_type: &str,
-        road_type: &str,
-        db_path: &str,
-    ) -> SqliteResult<()> {
+    fn update_data(&mut self, db_path: &str) -> SqliteResult<()> {
         // 清空现有数据
         self.total_rows.clear();
         self.sub_rows.clear();
 
-        // 收集所有子项目数据
-        let mut total_labor = 0.0;
-        let mut total_material = 0.0;
-        let mut total_machine = 0.0;
-        let mut total_research = 0.0;
-
-        debug!("Updating data for", project_type, road_type);
-
-        // 如果工程类型或道路类型为空，直接返回
-        if project_type.is_empty() || road_type.is_empty() {
-            return Ok(());
-        }
-
         let conn = Connection::open(db_path)?;
 
-        let sheet_id = if project_type == "道路工程" { 1 } else { 2 };
-        debug!("Using sheet_id:", sheet_id);
-
-        // 首先检查数据库中的数据
-        let mut check_stmt = conn.prepare(
-            "SELECT 编码, 名称及规格 FROM excel_data WHERE sheet_id = ? LIMIT 5"
-        )?;
-        let check_rows = check_stmt.query_map([sheet_id], |row| {
-            let code: String = row.get(0)?;
-            let name: String = row.get(1)?;
-            Ok((code, name))
-        })?;
-        
-        debug!("Checking first 5 rows in database:");
-        for row in check_rows {
-            if let Ok((code, name)) = row {
-                debug!("DB row:", &code, &name);
-            }
-        }
-
-        // 查询所有数据，包括碳排放因子
-        let mut stmt = conn.prepare(
-            "
-            WITH combined_factors AS (
-                SELECT 
-                    e.序号,
-                    e.编码,
-                    e.名称及规格,
-                    e.单位,
-                    e.数量,
-                    e.市场价,
-                    e.合计,
-                    e.category,
-                    CASE 
-                        WHEN e.编码 LIKE 'L%' THEN l.carbon_factor
-                        WHEN e.编码 LIKE 'M%' THEN m.carbon_factor
-                        WHEN e.编码 LIKE 'E%' THEN mc.carbon_factor
-                        ELSE 1
-                    END as carbon_factor
-                FROM excel_data e
-                LEFT JOIN labor l ON e.编码 = l.code
-                LEFT JOIN material m ON e.编码 = m.code
-                LEFT JOIN machine mc ON e.编码 = mc.code
-                WHERE e.sheet_id = :sheet_id
-                AND (e.编码 IS NOT NULL OR e.名称及规格 LIKE '%类别')  -- 修改过滤条件，确保能读取到类别标题行
-            )
-            SELECT 
-                序号,
-                编码,
-                名称及规格,
-                单位,
-                数量,
-                市场价,
-                合计,
-                category,
-                carbon_factor
-            FROM combined_factors
-            ORDER BY id;
-            ",
-        )?;
-
-        let rows = stmt.query_map([sheet_id], |row| {
-            let 序号: String = row.get(0)?;
-            let 编码: String = row.get(1)?;
-            let 名称及规格: String = row.get(2)?;
-            let 单位: String = row.get(3)?;
-            let 数量: String = row.get(4)?;
-            let 市场价: String = row.get(5)?;
-            let 合计: String = row.get(6)?;
-            let category: String = row.get(7)?;
-            let carbon_factor: f64 = row.get(8)?;
-
-            debug!("Processing row:", &编码, &名称及规格);
-
-            // 从数据库中获取类别
-            let category = Category::from_string(&category);
-
-            // 计算碳排放量
-            let emission = carbon_factor * 数量.parse::<f64>().unwrap_or(0.0);
-
-            // 创建主表行数据
-            let row = ResultRow {
-                序号: 序号.clone(),
-                编码: 编码.clone(),
-                名称及规格: 名称及规格.clone(),
-                项目名称: format!("{} {}", 编码, 名称及规格),
-                单位: 单位.clone(),
-                可研估算: 数量.clone(),
-                碳排放指数: format!("{:.2}", emission / 数量.parse::<f64>().unwrap_or(0.0)),
-                人工: format!("{:.4}", if matches!(category, Category::Labor) { emission } else { 0.0 }),
-                材料: format!("{:.4}", if matches!(category, Category::Material) { emission } else { 0.0 }),
-                机械: format!("{:.4}", if matches!(category, Category::Machine) { emission } else { 0.0 }),
-                小计: format!("{:.4}", emission),
-            };
-
-            // 创建子项行
-            let sub_row = SubItemRow {
-                序号,
-                编码,
-                名称及规格,
-                单位,
-                数量,
-                市场价,
-                合计,
-                category,
-            };
-
-            Ok((row, sub_row))
+        // 获取所有工作表
+        let mut sheets_stmt = conn.prepare("SELECT id, name FROM sheets ORDER BY id")?;
+        let sheets = sheets_stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?;
 
-        // 保存子项目数据
-        for row_result in rows {
-            if let Ok((row, sub_row)) = row_result {
-                debug!("Adding sub row with category:", &sub_row.category, &sub_row.编码);
-                self.sub_rows.push(sub_row.clone());
-                
-                // 累加各项数据
-                if let Ok(labor) = row.人工.parse::<f64>() {
-                    total_labor += labor;
-                }
-                if let Ok(material) = row.材料.parse::<f64>() {
-                    total_material += material;
-                }
-                if let Ok(machine) = row.机械.parse::<f64>() {
-                    total_machine += machine;
-                }
-                if let Ok(research) = row.可研估算.parse::<f64>() {
-                    total_research += research;
-                }
-            }
+        for sheet_result in sheets {
+            let (sheet_id, sheet_name) = sheet_result?;
+            
+            // 为每个工作表收集数据
+            let mut total_labor = 0.0;
+            let mut total_material = 0.0;
+            let mut total_machine = 0.0;
+            let mut total_research = 0.0;
+
+            // ... 查询和处理数据的代码保持不变 ...
+
+            // 添加工作表标题行
+            self.total_rows.push(ResultRow {
+                序号: format!("{}", self.total_rows.len() + 1),
+                编码: "".to_string(),
+                名称及规格: "".to_string(),
+                项目名称: sheet_name.clone(),
+                单位: "".to_string(),
+                可研估算: "".to_string(),
+                碳排放指数: "".to_string(),
+                人工: "".to_string(),
+                材料: "".to_string(),
+                机械: "".to_string(),
+                小计: "".to_string(),
+            });
+
+            // 添加汇总数据行
+            let total_emission = total_labor + total_material + total_machine;
+            self.total_rows.push(ResultRow {
+                序号: format!("{}.1", self.total_rows.len()),
+                编码: "".to_string(),
+                名称及规格: "汇总数据".to_string(),
+                项目名称: "汇总数据".to_string(),
+                单位: "m2".to_string(),
+                可研估算: format!("{:.2}", total_research),
+                碳排放指数: format!("{:.2}", if total_research > 0.0 { total_emission / total_research } else { 0.0 }),
+                人工: format!("{:.4}", total_labor),
+                材料: format!("{:.4}", total_material),
+                机械: format!("{:.4}", total_machine),
+                小计: format!("{:.4}", total_emission),
+            });
         }
-
-        debug!("Total sub rows before categorization:", self.sub_rows.len());
-
-        // 添加工程类型行
-        self.total_rows.push(ResultRow {
-            序号: "一".to_string(),
-            编码: "".to_string(),
-            名称及规格: "".to_string(),
-            项目名称: project_type.to_string(),
-            单位: "".to_string(),
-            可研估算: "".to_string(),
-            碳排放指数: "".to_string(),
-            人工: "".to_string(),
-            材料: "".to_string(),
-            机械: "".to_string(),
-            小计: "".to_string(),
-        });
-
-        // 添加道路类型行
-        let total_emission = total_labor + total_material + total_machine;
-        self.total_rows.push(ResultRow {
-            序号: "1".to_string(),
-            编码: "".to_string(),
-            名称及规格: road_type.to_string(),
-            项目名称: road_type.to_string(),
-            单位: "m2".to_string(),
-            可研估算: format!("{:.2}", total_research),
-            碳排放指数: format!("{:.2}", if total_research > 0.0 { total_emission / total_research } else { 0.0 }),
-            人工: format!("{:.4}", total_labor),
-            材料: format!("{:.4}", total_material),
-            机械: format!("{:.4}", total_machine),
-            小计: format!("{:.4}", total_emission),
-        });
 
         Ok(())
     }
@@ -1598,14 +1292,14 @@ impl TableDelegate for ResultTableDelegate {
 struct CarbonResultPanel {
     table: Entity<Table<ResultTableDelegate>>, // 表格实体
     focus_handle: FocusHandle, // 焦点句柄
-    story: Entity<ExcelStory>, // Excel 故事实体
+    story: Entity<IndicatorStory>, // Excel 故事实体
     _subscriptions: Vec<Subscription>, // 订阅列表
     sub_items_panel: Option<Entity<ResultDetailsPanel>>, // 子项目面板
 }
 
 impl CarbonResultPanel {
     pub fn view(
-        story: Entity<ExcelStory>, // Excel 故事实体
+        story: Entity<IndicatorStory>, // Excel 故事实体
         window: &mut Window, // 窗口引用
         cx: &mut Context<DockArea>, // 上下文
     ) -> Entity<Self> {
@@ -1618,30 +1312,19 @@ impl CarbonResultPanel {
                 &story,
                 window,
                 move |this: &mut CarbonResultPanel,
-                      story: &Entity<ExcelStory>,
+                      story: &Entity<IndicatorStory>,
                       _: &UpdateResultTable,
                       window: &mut Window,
                       cx: &mut Context<CarbonResultPanel>| {
                     let story_data = story.read(cx); // 读取故事数据
-                    let project_type = story_data.project_type.clone(); // 项目类型
-                    let road_type = story_data.road_type.clone(); // 道路类型
-                    debug!("UpdateResultTable event received", &project_type, &road_type); // 调试信息
                     let db_path = story_data.db_path.clone(); // 数据库路径
                     drop(story_data); // 释放故事数据
 
                     table_clone.update(cx, |table, cx| {
-                        if project_type.is_empty() || road_type.is_empty() {
-                            window.push_notification(
-                                Notification::new("请先选择工程类型和道路类型")
-                                    .with_type(NotificationType::Warning),
-                                cx,
-                            );
-                        }
-
                         if let Err(e) =
                             table
                                 .delegate_mut()
-                                .update_data(&project_type, &road_type, &db_path)
+                                .update_data(&db_path)
                         {
                             window.push_notification(
                                 Notification::new(format!("更新数据失败: {}", e))
@@ -1936,7 +1619,7 @@ fn main() {
     app.run(move |cx| {
         story::init(cx);
         cx.activate(true);
-        story::create_new_window("碳排放计算程序", ExcelStory::new_view, cx);
+        story::create_new_window("碳排放计算程序", IndicatorStory::new_view, cx);
     });
 }
 

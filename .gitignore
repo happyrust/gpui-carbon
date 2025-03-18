@@ -3,3 +3,5 @@
 /layout.json
 .vscode
 index.scip
+data/excel_data.db
+data/indicator_data.db
