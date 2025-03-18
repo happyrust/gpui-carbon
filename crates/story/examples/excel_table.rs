@@ -25,7 +25,7 @@ use std::fs;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
-use story::{Assets, Story};
+use story::{debug, Assets, Story};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, JsonSchema, Serialize)]
 enum Category {
@@ -578,7 +578,7 @@ impl ExcelStory {
             acc
         })?;
 
-        // dbg!()
+        // debug!()
 
         Some((project_type, road_type))
     }
@@ -671,7 +671,7 @@ impl ExcelStory {
                                         category_counts.insert(Category::Machine, 0);
                                         category_counts.insert(Category::None, 0);
 
-                                        dbg!("Starting to process rows for sheet:", sheet_name);
+                                        debug!("Starting to process rows for sheet:", sheet_name);
 
                                         // Insert data
                                         for row in rows.iter().skip(header_idx + 1) {
@@ -684,15 +684,15 @@ impl ExcelStory {
                                             // 检查是否是类别标题行
                                             if 名称及规格.trim() == "人工类别" {
                                                 current_category = Category::Labor;
-                                                dbg!("Found labor category");
+                                                debug!("Found labor category");
                                                 continue;
                                             } else if 名称及规格.trim() == "材料类别" {
                                                 current_category = Category::Material;
-                                                dbg!("Found material category");
+                                                debug!("Found material category");
                                                 continue;
                                             } else if 名称及规格.trim() == "机械类别" {
                                                 current_category = Category::Machine;
-                                                dbg!("Found machine category");
+                                                debug!("Found machine category");
                                                 continue;
                                             }
 
@@ -723,7 +723,7 @@ impl ExcelStory {
                                                 if let Some(code) = row_data.get_mut("编码") {
                                                     if !code.starts_with('L') && !code.starts_with('M') && !code.starts_with('E') {
                                                         *code = format!("{}{}", current_category.prefix(), code);
-                                                        dbg!("Added prefix to code:", code, "Category:", &current_category);
+                                                        debug!("Added prefix to code:", code, "Category:", &current_category);
                                                     }
                                                 }
 
@@ -747,11 +747,11 @@ impl ExcelStory {
                                         }
 
                                         // Print category statistics
-                                        dbg!("Category counts for sheet:", sheet_name);
-                                        dbg!("Labor items:", category_counts[&Category::Labor]);
-                                        dbg!("Material items:", category_counts[&Category::Material]);
-                                        dbg!("Machine items:", category_counts[&Category::Machine]);
-                                        dbg!("Uncategorized items:", category_counts[&Category::None]);
+                                        debug!("Category counts for sheet:", sheet_name);
+                                        debug!("Labor items:", category_counts[&Category::Labor]);
+                                        debug!("Material items:", category_counts[&Category::Material]);
+                                        debug!("Machine items:", category_counts[&Category::Machine]);
+                                        debug!("Uncategorized items:", category_counts[&Category::None]);
 
                                         success = true;
                                     }
@@ -841,7 +841,7 @@ impl ExcelStory {
                         let mut success = false;
 
                         for (sheet_name, table_name) in sheet_table_mapping {
-                            // dbg!(sheet_name, table_name);
+                            // debug!(sheet_name, table_name);
                             if let Ok(range) = workbook.worksheet_range(sheet_name) {
                                 if !range.is_empty() {
                                     let rows: Vec<_> = range.rows().collect();
@@ -860,7 +860,7 @@ impl ExcelStory {
                                             .iter()
                                             .all(|col| column_indices.contains_key(*col))
                                     }) {
-                                        // dbg!(&column_indices);
+                                        // debug!(&column_indices);
                                         // Insert data
                                         let insert_sql = format!(
                                             "INSERT INTO {} (code, name, specification, unit, carbon_factor) 
@@ -1064,7 +1064,7 @@ impl ParamFormPane {
             cx.subscribe_in(&story, window, {
                 let story = story.clone();
                 move |_, _dropdown, event: &UpdateTypesUIEvent, _window, cx| {
-                    dbg!("UpdateTypesUIEvent");
+                    debug!("UpdateTypesUIEvent");
                 }
             })
             .detach();
@@ -1362,7 +1362,7 @@ impl ResultTableDelegate {
         let mut total_machine = 0.0;
         let mut total_research = 0.0;
 
-        dbg!("Updating data for", project_type, road_type);
+        debug!("Updating data for", project_type, road_type);
 
         // 如果工程类型或道路类型为空，直接返回
         if project_type.is_empty() || road_type.is_empty() {
@@ -1372,7 +1372,7 @@ impl ResultTableDelegate {
         let conn = Connection::open(db_path)?;
 
         let sheet_id = if project_type == "道路工程" { 1 } else { 2 };
-        dbg!("Using sheet_id:", sheet_id);
+        debug!("Using sheet_id:", sheet_id);
 
         // 首先检查数据库中的数据
         let mut check_stmt = conn.prepare(
@@ -1384,10 +1384,10 @@ impl ResultTableDelegate {
             Ok((code, name))
         })?;
         
-        dbg!("Checking first 5 rows in database:");
+        debug!("Checking first 5 rows in database:");
         for row in check_rows {
             if let Ok((code, name)) = row {
-                dbg!("DB row:", &code, &name);
+                debug!("DB row:", &code, &name);
             }
         }
 
@@ -1443,7 +1443,7 @@ impl ResultTableDelegate {
             let category: String = row.get(7)?;
             let carbon_factor: f64 = row.get(8)?;
 
-            dbg!("Processing row:", &编码, &名称及规格);
+            debug!("Processing row:", &编码, &名称及规格);
 
             // 从数据库中获取类别
             let category = Category::from_string(&category);
@@ -1484,7 +1484,7 @@ impl ResultTableDelegate {
         // 保存子项目数据
         for row_result in rows {
             if let Ok((row, sub_row)) = row_result {
-                dbg!("Adding sub row with category:", &sub_row.category, &sub_row.编码);
+                debug!("Adding sub row with category:", &sub_row.category, &sub_row.编码);
                 self.sub_rows.push(sub_row.clone());
                 
                 // 累加各项数据
@@ -1503,7 +1503,7 @@ impl ResultTableDelegate {
             }
         }
 
-        dbg!("Total sub rows before categorization:", self.sub_rows.len());
+        debug!("Total sub rows before categorization:", self.sub_rows.len());
 
         // 添加工程类型行
         self.total_rows.push(ResultRow {
@@ -1625,7 +1625,7 @@ impl CarbonResultPanel {
                     let story_data = story.read(cx);
                     let project_type = story_data.project_type.clone();
                     let road_type = story_data.road_type.clone();
-                    dbg!("UpdateResultTable event received", &project_type, &road_type);
+                    debug!("UpdateResultTable event received", &project_type, &road_type);
                     let db_path = story_data.db_path.clone();
                     drop(story_data);
 
@@ -1671,7 +1671,7 @@ impl CarbonResultPanel {
                       window: &mut Window,
                       cx: &mut Context<CarbonResultPanel>| {
                     if let TableEvent::SelectRow(row_ix) = event {
-                        dbg!("Row selected:", row_ix);
+                        debug!("Row selected:", row_ix);
                         if *row_ix == 1 {
                             // 当选中第二行时
                             let story_data = story.read(cx);
@@ -1680,7 +1680,7 @@ impl CarbonResultPanel {
 
                             // Create sub items panel if not exists
                             if this.sub_items_panel.is_none() {
-                                dbg!("Creating new sub items panel");
+                                debug!("Creating new sub items panel");
                                 // Create sub items panel
                                 let delegate = SubItemsTableDelegate::new();
                                 let table = cx.new(|cx| Table::new(delegate, window, cx));
@@ -1691,7 +1691,7 @@ impl CarbonResultPanel {
 
                                 // Set sub rows data
                                 let table_data = this.table.read(cx).delegate().clone();
-                                dbg!("Number of sub rows to display:", table_data.sub_rows.len());
+                                debug!("Number of sub rows to display:", table_data.sub_rows.len());
                                 sub_items_panel.update(cx, |panel, cx| {
                                     panel.table.update(cx, |table, cx| {
                                         table.delegate_mut().set_rows(table_data.sub_rows.clone());
@@ -1718,10 +1718,10 @@ impl CarbonResultPanel {
 
                                 this.sub_items_panel = Some(sub_items_panel);
                             } else if let Some(panel) = &this.sub_items_panel {
-                                dbg!("Updating existing sub items panel");
+                                debug!("Updating existing sub items panel");
                                 // Update existing panel data
                                 let table_data = this.table.read(cx).delegate().clone();
-                                dbg!("Number of sub rows to update:", table_data.sub_rows.len());
+                                debug!("Number of sub rows to update:", table_data.sub_rows.len());
                                 panel.update(cx, |panel, cx| {
                                     panel.table.update(cx, |table, cx| {
                                         table.delegate_mut().set_rows(table_data.sub_rows.clone());
@@ -1795,7 +1795,7 @@ impl SubItemsTableDelegate {
     }
 
     fn set_rows(&mut self, result_rows: Vec<SubItemRow>) {
-        dbg!("Setting rows in SubItemsTableDelegate, received rows:", result_rows.len());
+        debug!("Setting rows in SubItemsTableDelegate, received rows:", result_rows.len());
         
         // 清空现有数据
         self.rows.clear();
@@ -1837,7 +1837,7 @@ impl SubItemsTableDelegate {
             }
         }
 
-        dbg!("Final number of rows in delegate:", self.rows.len());
+        debug!("Final number of rows in delegate:", self.rows.len());
     }
 }
 
