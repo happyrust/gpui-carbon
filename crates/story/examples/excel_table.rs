@@ -197,7 +197,13 @@ impl TableDelegate for IndicatorTableDelegate {
         _: &mut Window,
         cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
-        div().child(self.col_name(col_ix, cx))
+        div()
+            .flex()
+            .justify_center() // 水平居中
+            .items_center() // 垂直居中
+            .size_full()
+            .font_weight(gpui::FontWeight::MEDIUM) // 加粗
+            .child(self.col_name(col_ix, cx))
     }
 
     fn render_td(
@@ -208,9 +214,33 @@ impl TableDelegate for IndicatorTableDelegate {
         _: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
         let row = &self.rows[row_ix];
-        let col_name = &self.columns[col_ix];
+        let value = match col_ix {
+            0 => row.data.get("序号").cloned().unwrap_or_default(),
+            1 => row.data.get("编码").cloned().unwrap_or_default(),
+            2 => row.data.get("名称及规格").cloned().unwrap_or_default(),
+            3 => row.data.get("单位").cloned().unwrap_or_default(),
+            4 => row.data.get("数量").cloned().unwrap_or_default(),
+            5 => row.data.get("市场价").cloned().unwrap_or_default(),
+            6 => row.data.get("合计").cloned().unwrap_or_default(),
+            _ => String::new(),
+        };
 
-        div().child(row.data.get(col_name).cloned().unwrap_or_default())
+        let mut element = div();
+        
+        // 对列进行特殊处理
+        match col_ix {
+            0 => element = element.flex().justify_center(), // 居中序号
+            1 => element = element.flex().items_start().pl_2(), // 左对齐编码
+            2 => element = element.flex().items_start().pl_2(), // 左对齐名称及规格
+            3 => element = element.flex().justify_center(), // 居中单位
+            _ => {
+                if !value.is_empty() {
+                    element = element.flex().justify_end().pr_2(); // 右对齐数字列
+                }
+            }
+        }
+        
+        element.child(value)
     }
 
     fn can_loop_select(&self, _: &App) -> bool {
@@ -1413,8 +1443,21 @@ impl TableDelegate for ResultTableDelegate {
         self.columns[col_ix].clone().into()
     }
 
-    fn col_width(&self, _: usize, _: &App) -> Pixels {
-        120.0.into()
+    fn col_width(&self, col_ix: usize, _: &App) -> Pixels {
+        // 优化列宽设置，使表格更易读
+        match col_ix {
+            0 => px(60.0),    // 序号 - 固定窄宽度
+            1 => px(200.0),   // 项目名称 - 最宽列，显示完整名称
+            2 => px(60.0),    // 单位 - 固定窄宽度
+            3 => px(100.0),   // 工程量 - 中等宽度
+            4 => px(120.0),   // 总碳排放量 - 稍宽，包含数字和公式
+            5 => px(120.0),   // 主要人材机耗量 - 较宽
+            6 => px(90.0),    // 人工 - 数值列
+            7 => px(90.0),    // 材料 - 数值列
+            8 => px(90.0),    // 机械 - 数值列
+            9 => px(90.0),    // 小计 - 数值列
+            _ => px(80.0),    // 默认宽度
+        }
     }
 
     fn col_padding(&self, _: usize, _: &App) -> Option<Edges<Pixels>> {
@@ -1427,7 +1470,13 @@ impl TableDelegate for ResultTableDelegate {
         _: &mut Window,
         cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
-        div().child(self.col_name(col_ix, cx))
+        div()
+            .flex()
+            .justify_center() // 水平居中
+            .items_center() // 垂直居中
+            .size_full()
+            .font_weight(gpui::FontWeight::MEDIUM) // 加粗
+            .child(self.col_name(col_ix, cx))
     }
 
     fn render_td(
@@ -1459,7 +1508,25 @@ impl TableDelegate for ResultTableDelegate {
             _ => String::new(),
         };
 
-        div().child(value)
+        let mut element = div();
+        
+        // 对列进行特殊处理
+        match col_ix {
+            0 => element = element.flex().justify_center(), // 居中序号
+            1 => element = element.flex().items_start().pl_2(), // 左对齐项目名称
+            _ => {
+                if !is_category_row {
+                    element = element.flex().justify_end().pr_2(); // 右对齐数字列
+                }
+            }
+        }
+        
+        // 为类别行应用特殊样式
+        if is_category_row {
+            element = element.font_weight(gpui::FontWeight::BOLD); // 加粗类别行
+        }
+        
+        element.child(value)
     }
 }
 
@@ -2002,8 +2069,18 @@ impl TableDelegate for ResultDetailsTableDelegate {
         self.columns[col_ix].clone().into()
     }
 
-    fn col_width(&self, _: usize, _: &App) -> Pixels {
-        120.0.into()
+    fn col_width(&self, col_ix: usize, _: &App) -> Pixels {
+        // 优化列宽设置，使表格更易读
+        match col_ix {
+            0 => px(50.0),    // 序号 - 固定窄宽度
+            1 => px(100.0),   // 编码 - 适中宽度
+            2 => px(250.0),   // 名称及规格 - 最宽列，显示详细信息
+            3 => px(60.0),    // 单位 - 固定窄宽度
+            4 => px(80.0),    // 数量 - 数值列
+            5 => px(90.0),    // 市场价 - 数值列
+            6 => px(100.0),   // 合计 - 数值列，可能包含较大数字
+            _ => px(80.0),    // 默认宽度
+        }
     }
 
     fn col_padding(&self, _: usize, _: &App) -> Option<Edges<Pixels>> {
@@ -2016,7 +2093,13 @@ impl TableDelegate for ResultDetailsTableDelegate {
         _: &mut Window,
         cx: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
-        div().child(self.col_name(col_ix, cx))
+        div()
+            .flex()
+            .justify_center() // 水平居中
+            .items_center() // 垂直居中
+            .size_full()
+            .font_weight(gpui::FontWeight::MEDIUM) // 加粗
+            .child(self.col_name(col_ix, cx))
     }
 
     fn render_td(
@@ -2038,7 +2121,33 @@ impl TableDelegate for ResultDetailsTableDelegate {
             _ => String::new(),
         };
 
-        div().child(value)
+        // 检查是否是类别标题行
+        let is_category_row = Category::from_type_column(&row.名称及规格).is_some();
+        
+        let mut element = div();
+        
+        // 对列进行特殊处理
+        match col_ix {
+            0 => element = element.flex().justify_center(), // 居中序号
+            1 => element = element.flex().justify_center(), // 居中编码
+            2 => element = element.flex().items_start().pl_2(), // 左对齐名称及规格
+            3 => element = element.flex().justify_center(), // 居中单位
+            _ => {
+                if !is_category_row && !value.is_empty() {
+                    element = element.flex().justify_end().pr_2(); // 右对齐数字列
+                }
+            }
+        }
+        
+        // 为类别行应用特殊样式
+        if is_category_row {
+            element = element.font_weight(gpui::FontWeight::BOLD); // 加粗
+            if col_ix > 0 {
+                element = element.flex().justify_center(); // 类别标题居中
+            }
+        }
+        
+        element.child(value)
     }
 }
 
