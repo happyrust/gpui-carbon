@@ -12,6 +12,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-C target-feature=+crt-static"
+  SQLITE3_LIB_DIR: "C:/vcpkg/installed/x64-windows-static/lib"
+  SQLITE3_INCLUDE_DIR: "C:/vcpkg/installed/x64-windows-static/include"
+  LIBSQLITE3_STATIC: 1
 
 jobs:
   build:
@@ -29,6 +32,7 @@ jobs:
     - name: Install dependencies
       run: |
         vcpkg integrate install
+        vcpkg install sqlite3:x64-windows-static
         
     - name: Cache cargo registry
       uses: actions/cache@v3
@@ -43,6 +47,10 @@ jobs:
           
     - name: Build excel_table example
       run: cargo +nightly build --release --example excel_table
+      env:
+        SQLITE3_LIB_DIR: "C:/vcpkg/installed/x64-windows-static/lib"
+        SQLITE3_INCLUDE_DIR: "C:/vcpkg/installed/x64-windows-static/include"
+        LIBSQLITE3_STATIC: 1
       
     - name: Create Release Folder
       run: |
