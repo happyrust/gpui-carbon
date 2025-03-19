@@ -426,7 +426,7 @@ impl IndicatorStory {
             [],
         )?;
 
-        // Create data table
+        // Create data table with new columns
         conn.execute(
             "CREATE TABLE IF NOT EXISTS excel_data (
                 id INTEGER PRIMARY KEY,
@@ -438,7 +438,9 @@ impl IndicatorStory {
                 数量 TEXT,
                 市场价 TEXT,
                 合计 TEXT,
-                category TEXT,  -- 添加category字段
+                category TEXT,
+                carbon_factor TEXT DEFAULT '1',
+                carbon_emission TEXT,
                 FOREIGN KEY(sheet_id) REFERENCES sheets(id)
             )",
             [],
@@ -477,6 +479,17 @@ impl IndicatorStory {
             )",
             [],
         )?;
+
+        // Add new columns if they don't exist
+        conn.execute(
+            "ALTER TABLE excel_data ADD COLUMN carbon_factor TEXT DEFAULT '1'",
+            [],
+        ).ok();
+
+        conn.execute(
+            "ALTER TABLE excel_data ADD COLUMN carbon_emission TEXT",
+            [],
+        ).ok();
 
         Ok(())
     }
@@ -671,8 +684,8 @@ impl IndicatorStory {
 
                                                 tx.execute(
                                                     "INSERT INTO excel_data (
-                                                        sheet_id, 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计, category
-                                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                                        sheet_id, 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计, category, carbon_factor, carbon_emission
+                                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                                     params![
                                                         sheet_id,
                                                         row_data.get("序号").unwrap_or(&String::new()),
@@ -683,6 +696,8 @@ impl IndicatorStory {
                                                         row_data.get("市场价").unwrap_or(&String::new()),
                                                         row_data.get("合计").unwrap_or(&String::new()),
                                                         current_category.to_string(),
+                                                        "1", // 默认碳排放因子
+                                                        "", // 默认碳排放量
                                                     ],
                                                 ).unwrap();
                                             }
@@ -1163,16 +1178,31 @@ struct ResultRow {
     小计: String,
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 struct SubItemRow {
     序号: String,
     编码: String,
     名称及规格: String,
     单位: String,
     数量: String,
-    市场价: String,
-    合计: String,
-    category: Category,  // 添加类别字段
+    碳排放因子: String,
+    碳排放量: String,
+    category: Category,
+}
+
+impl Default for SubItemRow {
+    fn default() -> Self {
+        Self {
+            序号: String::new(),
+            编码: String::new(),
+            名称及规格: String::new(),
+            单位: String::new(),
+            数量: String::new(),
+            碳排放因子: String::new(),
+            碳排放量: String::new(),
+            category: Category::None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1336,11 +1366,11 @@ impl ResultTableDelegate {
                             SELECT 
                                 e.*,
                                 CASE 
-                                    WHEN e.编码 LIKE 'L%' THEN l.carbon_factor
-                                    WHEN e.编码 LIKE 'M%' THEN m.carbon_factor
-                                    WHEN e.编码 LIKE 'E%' THEN mc.carbon_factor
-                                    ELSE 1.0
-                                END as carbon_factor
+                                    WHEN e.category = 'labor' AND l.carbon_factor IS NOT NULL THEN l.carbon_factor 
+                                    WHEN e.category = 'material' AND m.carbon_factor IS NOT NULL THEN m.carbon_factor 
+                                    WHEN e.category = 'machine' AND mc.carbon_factor IS NOT NULL THEN mc.carbon_factor 
+                                    ELSE 1.0 
+                                END as real_carbon_factor
                             FROM excel_data e
                             LEFT JOIN labor l ON substr(e.编码, 2) = l.code
                             LEFT JOIN material m ON substr(e.编码, 2) = m.code
@@ -1349,7 +1379,7 @@ impl ResultTableDelegate {
                         )
                         SELECT 
                             category,
-                            SUM(CAST(NULLIF(数量,'') AS FLOAT) * carbon_factor) as total_emission
+                            SUM(CAST(NULLIF(数量,'') AS FLOAT) * real_carbon_factor) as total_emission
                         FROM combined_data
                         WHERE category IS NOT NULL AND 数量 != ''
                         GROUP BY category"
@@ -1399,22 +1429,33 @@ impl ResultTableDelegate {
                     
                     // 加载子项目明细数据用于详情面板
                     let mut sub_stmt = conn.prepare(
-                        "SELECT 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计, category
-                         FROM excel_data 
-                         WHERE sheet_id = ?
-                         AND (编码 IS NOT NULL OR 名称及规格 LIKE '%类别')
-                         ORDER BY id"
+                        "SELECT e.序号, e.编码, e.名称及规格, e.单位, e.数量, 
+                         CASE 
+                            WHEN e.category = 'labor' AND l.carbon_factor IS NOT NULL THEN l.carbon_factor 
+                            WHEN e.category = 'material' AND m.carbon_factor IS NOT NULL THEN m.carbon_factor 
+                            WHEN e.category = 'machine' AND mc.carbon_factor IS NOT NULL THEN mc.carbon_factor 
+                            ELSE 1.0 
+                         END as carbon_factor,
+                         e.carbon_emission, e.category
+                         FROM excel_data e
+                         LEFT JOIN labor l ON substr(e.编码, 2) = l.code
+                         LEFT JOIN material m ON substr(e.编码, 2) = m.code
+                         LEFT JOIN machine mc ON substr(e.编码, 2) = mc.code
+                         WHERE e.sheet_id = ?
+                         AND (e.编码 IS NOT NULL OR e.名称及规格 LIKE '%类别')
+                         ORDER BY e.id"
                     )?;
                     
                     let sub_rows = sub_stmt.query_map(params![sheet_id], |row| {
+                        let 碳排放因子: f64 = row.get(5).unwrap_or(1.0);
                         Ok(SubItemRow {
-                            序号: row.get(0)?,
-                            编码: row.get(1)?,
-                            名称及规格: row.get(2)?,
-                            单位: row.get(3)?,
-                            数量: row.get(4)?,
-                            市场价: row.get(5)?,
-                            合计: row.get(6)?,
+                            序号: row.get(0).unwrap_or_default(),
+                            编码: row.get(1).unwrap_or_default(),
+                            名称及规格: row.get(2).unwrap_or_default(),
+                            单位: row.get(3).unwrap_or_default(),
+                            数量: row.get(4).unwrap_or_default(),
+                            碳排放因子: format!("{}", 碳排放因子),
+                            碳排放量: "".to_string(), // 将在后续计算
                             category: Category::from_string(&row.get::<_, String>(7).unwrap_or_default()),
                         })
                     })?;
@@ -1943,8 +1984,8 @@ impl CarbonResultPanel {
                                 名称及规格: header_text.to_string(),
                                 单位: "".to_string(),
                                 数量: "".to_string(),
-                                市场价: "".to_string(),
-                                合计: "".to_string(),
+                                碳排放因子: "".to_string(),
+                                碳排放量: "".to_string(),
                                 category: Category::from_string(category_name),
                             };
                             
@@ -1952,21 +1993,32 @@ impl CarbonResultPanel {
                             
                             // Get items for this category
                             match conn.prepare(
-                                "SELECT 序号, 编码, 名称及规格, 单位, 数量, 市场价, 合计 
-                                 FROM excel_data 
-                                 WHERE sheet_id = ? AND category = ? AND 名称及规格 NOT LIKE '%类别'
-                                 ORDER BY id"
+                                "SELECT e.序号, e.编码, e.名称及规格, e.单位, e.数量, 
+                                 CASE 
+                                    WHEN e.category = 'labor' AND l.carbon_factor IS NOT NULL THEN l.carbon_factor 
+                                    WHEN e.category = 'material' AND m.carbon_factor IS NOT NULL THEN m.carbon_factor 
+                                    WHEN e.category = 'machine' AND mc.carbon_factor IS NOT NULL THEN mc.carbon_factor 
+                                    ELSE 1.0 
+                                 END as carbon_factor,
+                                 e.carbon_emission, e.category 
+                                 FROM excel_data e
+                                 LEFT JOIN labor l ON substr(e.编码, 2) = l.code
+                                 LEFT JOIN material m ON substr(e.编码, 2) = m.code
+                                 LEFT JOIN machine mc ON substr(e.编码, 2) = mc.code
+                                 WHERE e.sheet_id = ? AND e.category = ? AND e.名称及规格 NOT LIKE '%类别'
+                                 ORDER BY e.id"
                             ) {
                                 Ok(mut stmt) => {
                                     match stmt.query_map(params![sheet_id, category_name], |row| {
+                                        let 碳排放因子: f64 = row.get(5)?;
                                         Ok(SubItemRow {
                                             序号: row.get(0).unwrap_or_default(),
                                             编码: row.get(1).unwrap_or_default(),
                                             名称及规格: row.get(2).unwrap_or_default(),
                                             单位: row.get(3).unwrap_or_default(),
                                             数量: row.get(4).unwrap_or_default(),
-                                            市场价: row.get(5).unwrap_or_default(),
-                                            合计: row.get(6).unwrap_or_default(),
+                                            碳排放因子: format!("{}", 碳排放因子),
+                                            碳排放量: "".to_string(), // 将在后续计算
                                             category: Category::from_string(category_name),
                                         })
                                     }) {
@@ -2099,8 +2151,8 @@ impl ResultDetailsTableDelegate {
             "名称及规格".to_string(),
             "单位".to_string(),
             "数量".to_string(),
-            "市场价".to_string(),
-            "合计".to_string(),
+            "碳排放因子".to_string(),
+            "碳排放量".to_string(),
         ];
 
         Self {
@@ -2115,40 +2167,87 @@ impl ResultDetailsTableDelegate {
         // 清空现有数据
         self.rows.clear();
 
-        // 当前类别
-        let mut _current_category = Category::None;
+        // 处理类别和计算逻辑
+        let mut processed_rows: Vec<(Category, Vec<SubItemRow>)> = Vec::new();
+        let mut current_category = Category::None;
         let mut current_rows: Vec<SubItemRow> = Vec::new();
-
-        // 遍历所有行
+        
+        // 第一轮：分离不同类别的行
         for row in result_rows {
             // 检查是否是类别标题行
             if let Some(category) = Category::from_type_column(&row.名称及规格) {
-                // 如果有之前的类别数据，先添加到结果中
+                // 如果已经有数据，保存前一个类别
                 if !current_rows.is_empty() {
-                    // 添加当前类别的所有行
-                    for (i, mut row) in current_rows.drain(..).enumerate() {
-                        row.序号 = (i + 1).to_string();
-                        self.rows.push(row);
-                    }
-                    // 添加空行分隔
-                    self.rows.push(SubItemRow::default());
+                    processed_rows.push((current_category, std::mem::take(&mut current_rows)));
                 }
-
                 // 更新当前类别
-                _current_category = category;
-                // 添加类别标题行
-                self.rows.push(row);
+                current_category = category;
             } else if !row.编码.is_empty() {
-                // 普通数据行，添加到当前类别的行集合中
+                // 普通数据行，添加到当前类别集合
                 current_rows.push(row);
             }
         }
-
-        // 处理最后一个类别的数据
+        
+        // 处理最后一个类别
         if !current_rows.is_empty() {
-            for (i, mut row) in current_rows.drain(..).enumerate() {
-                row.序号 = (i + 1).to_string();
-                self.rows.push(row);
+            processed_rows.push((current_category, current_rows));
+        }
+        
+        // 第二轮：为每个类别计算汇总并格式化显示
+        for (category_index, (category, rows)) in processed_rows.iter().enumerate() {
+            // 计算类别汇总
+            let mut category_total = 0.0;
+            for row in rows {
+                // 计算类别总碳排放量
+                if let (Ok(quantity), Ok(factor)) = (row.数量.parse::<f64>(), row.碳排放因子.parse::<f64>()) {
+                    category_total += quantity * factor;
+                }
+            }
+            
+            // 添加类别标题行
+            let category_title = match category {
+                Category::Labor => "一、",
+                Category::Material => "三、",
+                Category::Machine => "四、",
+                Category::None => "",
+            };
+            
+            let category_name = match category {
+                Category::Labor => "人工",
+                Category::Material => "材料",
+                Category::Machine => "机械",
+                Category::None => "",
+            };
+            
+            // 添加类别标题行
+            let title_row = SubItemRow {
+                序号: category_title.to_string(),
+                编码: "".to_string(),
+                名称及规格: format!("{}类别", category_name),
+                单位: "".to_string(),
+                数量: "".to_string(),
+                碳排放因子: "".to_string(),
+                碳排放量: format!("{:.4}", category_total),
+                category: *category,
+            };
+            self.rows.push(title_row);
+            
+            // 添加该类别的数据行
+            for (i, mut row) in rows.iter().cloned().enumerate() {
+                let mut row_copy = row.clone();
+                row_copy.序号 = (i + 1).to_string();
+                
+                // 计算每行的碳排放量
+                if let (Ok(quantity), Ok(factor)) = (row_copy.数量.parse::<f64>(), row_copy.碳排放因子.parse::<f64>()) {
+                    row_copy.碳排放量 = format!("{:.4}", quantity * factor);
+                }
+                
+                self.rows.push(row_copy);
+            }
+            
+            // 添加空行作为分隔符，除非是最后一个类别
+            if category_index < processed_rows.len() - 1 {
+                self.rows.push(SubItemRow::default());
             }
         }
 
@@ -2213,8 +2312,8 @@ impl TableDelegate for ResultDetailsTableDelegate {
             2 => px(250.0),   // 名称及规格 - 最宽列，显示详细信息
             3 => px(60.0),    // 单位 - 固定窄宽度
             4 => px(80.0),    // 数量 - 数值列
-            5 => px(90.0),    // 市场价 - 数值列
-            6 => px(100.0),   // 合计 - 数值列，可能包含较大数字
+            5 => px(90.0),    // 碳排放因子 - 数值列
+            6 => px(100.0),   // 碳排放量 - 数值列，可能包含较大数字
             _ => px(80.0),    // 默认宽度
         }
     }
@@ -2246,20 +2345,26 @@ impl TableDelegate for ResultDetailsTableDelegate {
         _: &mut Context<Table<Self>>,
     ) -> impl IntoElement {
         let row = &self.rows[row_ix];
+        let is_category_row = Category::from_type_column(&row.名称及规格).is_some();
+        
         let value = match col_ix {
             0 => row.序号.clone(),
             1 => row.编码.clone(),
             2 => row.名称及规格.clone(),
             3 => row.单位.clone(),
             4 => row.数量.clone(),
-            5 => row.市场价.clone(),
-            6 => row.合计.clone(),
+            5 => row.碳排放因子.clone(),
+            6 => {
+                if is_category_row {
+                    // 类别行的碳排放量显示在这一列
+                    row.碳排放量.clone()
+                } else {
+                    row.碳排放量.clone()
+                }
+            },
             _ => String::new(),
         };
 
-        // 检查是否是类别标题行
-        let is_category_row = Category::from_type_column(&row.名称及规格).is_some();
-        
         let mut element = div();
         
         // 对列进行特殊处理
@@ -2271,6 +2376,9 @@ impl TableDelegate for ResultDetailsTableDelegate {
             _ => {
                 if !is_category_row && !value.is_empty() {
                     element = element.flex().justify_end().pr_2(); // 右对齐数字列
+                } else if is_category_row && col_ix == 6 {
+                    // 类别行的碳排放量右对齐
+                    element = element.flex().justify_end().pr_2();
                 }
             }
         }
@@ -2278,7 +2386,7 @@ impl TableDelegate for ResultDetailsTableDelegate {
         // 为类别行应用特殊样式
         if is_category_row {
             element = element.font_weight(gpui::FontWeight::BOLD); // 加粗
-            if col_ix > 0 {
+            if col_ix > 0 && col_ix != 6 { // 排除碳排放量列
                 element = element.flex().justify_center(); // 类别标题居中
             }
         }

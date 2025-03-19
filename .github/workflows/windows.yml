@@ -73,6 +73,7 @@ jobs:
     - name: Delete old nightly release
       uses: dev-drprasad/delete-tag-and-release@v1.0
       if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      continue-on-error: true  # 如果是第一次运行，没有nightly标签会失败，这里允许继续
       with:
         tag_name: nightly
         delete_release: true
@@ -81,7 +82,7 @@ jobs:
 
     - name: Create Nightly Release
       uses: softprops/action-gh-release@v1
-      if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' && github.ref == 'refs/heads/main'
       with:
         name: Nightly Build (${{ steps.date.outputs.date }})
         tag_name: nightly
