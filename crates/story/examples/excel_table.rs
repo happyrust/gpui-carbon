@@ -1861,108 +1861,104 @@ impl CarbonResultPanel {
             return;
         }
         
-        // 创建一个新的Excel工作簿
-        let mut wb = Workbook::create("results.xlsx");
-        
-        // 创建工作表
-        let mut sheet = wb.create_sheet("碳排放计算结果");
-        
-        // 写入标题行
-        wb.write_sheet(&mut sheet, |sheet_writer| {
-            // 写入标题行
-            let row = row!["序号", "项目名称", "单位", "工程量", "总碳排放量", "人工", "材料", "机械", "小计"];
-            sheet_writer.append_row(row)?;
-            
-            // 写入数据行
-            for row_data in &result_rows {
-                let is_category_row = !row_data.项目名称.contains(' ') && row_data.单位.is_empty();
+        // 使用异步文件保存对话框
+        window.spawn(cx, move |mut awc| async move {
+            // 打开文件保存对话框
+            if let Some(file_path) = rfd::AsyncFileDialog::new()
+                .add_filter("Excel files", &["xlsx"])
+                .set_title("导出Excel文件")
+                .set_file_name("碳排放计算结果.xlsx")
+                .save_file()
+                .await
+            {
+                // 获取选择的文件路径
+                let path_str = file_path.path().to_string_lossy().to_string();
                 
-                let 总碳排放量 = if is_category_row { 
-                    String::new()
-                } else { 
-                    if row_data.可研估算.is_empty() || row_data.可研估算 == "右键编辑" {
-                        "-".to_string()
-                    } else {
-                        match (row_data.可研估算.parse::<f64>(), row_data.小计.parse::<f64>()) {
-                            (Ok(工程量), Ok(小计)) => {
-                                let 总碳排放量 = 工程量 * 小计;
-                                format!("{:.2}", 总碳排放量)
-                            },
-                            _ => "-".to_string()
+                // 在UI线程中处理Excel导出逻辑
+                if let Ok(_) = awc.update(|window, cx| {
+                    // 创建一个新的Excel工作簿
+                    let mut wb = Workbook::create(&path_str);
+                    
+                    // 创建工作表
+                    let mut sheet = wb.create_sheet("碳排放计算结果");
+                    
+                    // 写入标题行
+                    if let Err(e) = wb.write_sheet(&mut sheet, |sheet_writer| {
+                        // 写入标题行
+                        let row = row!["序号", "项目名称", "单位", "工程量", "总碳排放量", "人工", "材料", "机械", "小计"];
+                        sheet_writer.append_row(row)?;
+                        
+                        // 写入数据行
+                        for row_data in &result_rows {
+                            let is_category_row = !row_data.项目名称.contains(' ') && row_data.单位.is_empty();
+                            
+                            let 总碳排放量 = if is_category_row { 
+                                String::new()
+                            } else { 
+                                if row_data.可研估算.is_empty() || row_data.可研估算 == "右键编辑" {
+                                    "-".to_string()
+                                } else {
+                                    match (row_data.可研估算.parse::<f64>(), row_data.小计.parse::<f64>()) {
+                                        (Ok(工程量), Ok(小计)) => {
+                                            let 总碳排放量 = 工程量 * 小计;
+                                            format!("{:.2}", 总碳排放量)
+                                        },
+                                        _ => "-".to_string()
+                                    }
+                                }
+                            };
+                            
+                            let data_row = row![
+                                row_data.序号.clone(),
+                                row_data.项目名称.clone(),
+                                if is_category_row { "".to_string() } else { row_data.单位.clone() },
+                                if is_category_row { "".to_string() } else { row_data.可研估算.clone() },
+                                总碳排放量,
+                                if is_category_row { "".to_string() } else { row_data.人工.clone() },
+                                if is_category_row { "".to_string() } else { row_data.材料.clone() },
+                                if is_category_row { "".to_string() } else { row_data.机械.clone() },
+                                if is_category_row { "".to_string() } else { row_data.小计.clone() }
+                            ];
+                            
+                            sheet_writer.append_row(data_row)?;
+                        }
+                        
+                        Ok(())
+                    }) {
+                        window.push_notification(
+                            Notification::new(format!("写入Excel工作表出错: {}", e))
+                                .with_type(NotificationType::Error),
+                            cx,
+                        );
+                        return Ok::<(), ()>(());
+                    }
+                    
+                    // 保存工作簿
+                    match wb.close() {
+                        Ok(_) => {
+                            window.push_notification(
+                                Notification::new(format!("计算结果已成功导出到 {}", path_str))
+                                    .with_type(NotificationType::Success),
+                                cx,
+                            );
+                        },
+                        Err(e) => {
+                            window.push_notification(
+                                Notification::new(format!("导出Excel失败: {}", e))
+                                    .with_type(NotificationType::Error),
+                                cx,
+                            );
                         }
                     }
-                };
-                
-                let data_row = row![
-                    row_data.序号.clone(),
-                    row_data.项目名称.clone(),
-                    if is_category_row { "".to_string() } else { row_data.单位.clone() },
-                    if is_category_row { "".to_string() } else { row_data.可研估算.clone() },
-                    总碳排放量,
-                    if is_category_row { "".to_string() } else { row_data.人工.clone() },
-                    if is_category_row { "".to_string() } else { row_data.材料.clone() },
-                    if is_category_row { "".to_string() } else { row_data.机械.clone() },
-                    if is_category_row { "".to_string() } else { row_data.小计.clone() }
-                ];
-                
-                sheet_writer.append_row(data_row)?;
-            }
-            
-            Ok(())
-        }).unwrap();
-        
-        // 创建详细工作表
-        if let Some(sub_panel) = &self.sub_items_panel {
-            // 获取子项目数据
-            let sub_rows = sub_panel.read(cx).table.read(cx).delegate().rows.clone();
-            
-            if !sub_rows.is_empty() {
-                let mut detail_sheet = wb.create_sheet("子项目详情");
-                
-                wb.write_sheet(&mut detail_sheet, |sheet_writer| {
-                    // 写入标题行
-                    let row = row!["序号", "编码", "名称及规格", "单位", "数量", "碳排放因子", "碳排放量"];
-                    sheet_writer.append_row(row)?;
                     
-                    // 写入数据行
-                    for row_data in &sub_rows {
-                        let is_category_row = Category::from_type_column(&row_data.名称及规格).is_some();
-                        
-                        let data_row = row![
-                            row_data.序号.clone(),
-                            row_data.编码.clone(),
-                            row_data.名称及规格.clone(),
-                            if is_category_row { "".to_string() } else { row_data.单位.clone() },
-                            if is_category_row { "".to_string() } else { row_data.数量.clone() },
-                            if is_category_row { "".to_string() } else { row_data.碳排放因子.clone() },
-                            row_data.碳排放量.clone()
-                        ];
-                        
-                        sheet_writer.append_row(data_row)?;
-                    }
-                    
-                    Ok(())
-                }).unwrap();
+                    Ok::<(), ()>(())
+                }) {
+                    // 处理成功
+                } else {
+                    // 处理失败情况 - 这里通常不会到达，除非窗口已关闭
+                }
             }
-        }
-        
-        // 保存工作簿
-        match wb.close() {
-            Ok(_) => {
-                window.push_notification(
-                    Notification::new("计算结果已成功导出到 results.xlsx")
-                        .with_type(NotificationType::Success),
-                    cx,
-                );
-            },
-            Err(e) => {
-                window.push_notification(
-                    Notification::new(format!("导出Excel失败: {}", e))
-                        .with_type(NotificationType::Error),
-                    cx,
-                );
-            }
-        }
+        }).detach();
     }
 
     fn load_sub_items_for_sheet(
