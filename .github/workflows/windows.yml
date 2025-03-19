@@ -55,9 +55,9 @@ jobs:
     - name: Create Release Folder
       run: |
         mkdir release
-        copy target/release/examples/excel_table.exe release/
-        copy target/release/*.dll release/ || true
-        copy assets release/assets/ /E /I || true
+        copy target\release\examples\excel_table.exe release\
+        if (Test-Path target\release\*.dll) { Copy-Item target\release\*.dll release\ }
+        if (Test-Path assets) { Copy-Item -Path assets -Destination release\assets -Recurse -Force }
         
     - name: Generate current date
       id: date
