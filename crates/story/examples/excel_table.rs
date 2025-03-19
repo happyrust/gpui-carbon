@@ -4,7 +4,7 @@ use gpui::{
     div, hsla, impl_actions, px, App, AppContext, Application, BorrowAppContext, Context, Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, Render, SharedString, Size as GpuiSize, Styled, Subscription, Window
 };
 use gpui_component::{
-    button::{Button, ButtonVariant, ButtonVariants}, dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView}, dropdown::{Dropdown, DropdownEvent}, h_flex, input::{InputEvent, TextInput}, label::Label, notification::{Notification, NotificationType}, popup_menu::PopupMenuExt, scroll::ScrollbarShow, table::{self, Table, TableDelegate, TableEvent}, v_flex, ContextModal, Sizable, Size, Theme
+    button::{Button, ButtonVariant, ButtonVariants}, dock::{DockArea, DockItem, DockPlacement, Panel, PanelEvent, PanelView}, dropdown::{Dropdown, DropdownEvent}, h_flex, input::{InputEvent, TextInput}, label::Label, notification::{Notification, NotificationType}, popup_menu::PopupMenuExt, scroll::ScrollbarShow, table::{self, Table, TableDelegate, TableEvent}, v_flex, ContextModal, Disableable as _, Sizable, Size, Theme
 };
 use log::{debug, error, info, LevelFilter};
 use log4rs::{
@@ -20,7 +20,11 @@ use std::fs;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use story::{Assets, Story};
+#[macro_use]
+extern crate simple_excel_writer;
+use simple_excel_writer::{Row, Workbook};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, JsonSchema, Serialize)]
 enum Category {
@@ -1840,6 +1844,127 @@ impl CarbonResultPanel {
         view
     }
 
+    // 导出所有计算结果到Excel
+    fn export_results_to_excel(&self, window: &mut Window, cx: &mut Context<CarbonResultPanel>) {
+        debug!("Exporting results to Excel");
+        
+        // 获取结果数据
+        let result_rows = self.table.read(cx).delegate().total_rows.clone();
+        
+        // 检查是否有数据可导出
+        if result_rows.is_empty() {
+            window.push_notification(
+                Notification::new("没有计算结果可导出")
+                    .with_type(NotificationType::Error),
+                cx,
+            );
+            return;
+        }
+        
+        // 创建一个新的Excel工作簿
+        let mut wb = Workbook::create("results.xlsx");
+        
+        // 创建工作表
+        let mut sheet = wb.create_sheet("碳排放计算结果");
+        
+        // 写入标题行
+        wb.write_sheet(&mut sheet, |sheet_writer| {
+            // 写入标题行
+            let row = row!["序号", "项目名称", "单位", "工程量", "总碳排放量", "人工", "材料", "机械", "小计"];
+            sheet_writer.append_row(row)?;
+            
+            // 写入数据行
+            for row_data in &result_rows {
+                let is_category_row = !row_data.项目名称.contains(' ') && row_data.单位.is_empty();
+                
+                let 总碳排放量 = if is_category_row { 
+                    String::new()
+                } else { 
+                    if row_data.可研估算.is_empty() || row_data.可研估算 == "右键编辑" {
+                        "-".to_string()
+                    } else {
+                        match (row_data.可研估算.parse::<f64>(), row_data.小计.parse::<f64>()) {
+                            (Ok(工程量), Ok(小计)) => {
+                                let 总碳排放量 = 工程量 * 小计;
+                                format!("{:.2}", 总碳排放量)
+                            },
+                            _ => "-".to_string()
+                        }
+                    }
+                };
+                
+                let data_row = row![
+                    row_data.序号.clone(),
+                    row_data.项目名称.clone(),
+                    if is_category_row { "".to_string() } else { row_data.单位.clone() },
+                    if is_category_row { "".to_string() } else { row_data.可研估算.clone() },
+                    总碳排放量,
+                    if is_category_row { "".to_string() } else { row_data.人工.clone() },
+                    if is_category_row { "".to_string() } else { row_data.材料.clone() },
+                    if is_category_row { "".to_string() } else { row_data.机械.clone() },
+                    if is_category_row { "".to_string() } else { row_data.小计.clone() }
+                ];
+                
+                sheet_writer.append_row(data_row)?;
+            }
+            
+            Ok(())
+        }).unwrap();
+        
+        // 创建详细工作表
+        if let Some(sub_panel) = &self.sub_items_panel {
+            // 获取子项目数据
+            let sub_rows = sub_panel.read(cx).table.read(cx).delegate().rows.clone();
+            
+            if !sub_rows.is_empty() {
+                let mut detail_sheet = wb.create_sheet("子项目详情");
+                
+                wb.write_sheet(&mut detail_sheet, |sheet_writer| {
+                    // 写入标题行
+                    let row = row!["序号", "编码", "名称及规格", "单位", "数量", "碳排放因子", "碳排放量"];
+                    sheet_writer.append_row(row)?;
+                    
+                    // 写入数据行
+                    for row_data in &sub_rows {
+                        let is_category_row = Category::from_type_column(&row_data.名称及规格).is_some();
+                        
+                        let data_row = row![
+                            row_data.序号.clone(),
+                            row_data.编码.clone(),
+                            row_data.名称及规格.clone(),
+                            if is_category_row { "".to_string() } else { row_data.单位.clone() },
+                            if is_category_row { "".to_string() } else { row_data.数量.clone() },
+                            if is_category_row { "".to_string() } else { row_data.碳排放因子.clone() },
+                            row_data.碳排放量.clone()
+                        ];
+                        
+                        sheet_writer.append_row(data_row)?;
+                    }
+                    
+                    Ok(())
+                }).unwrap();
+            }
+        }
+        
+        // 保存工作簿
+        match wb.close() {
+            Ok(_) => {
+                window.push_notification(
+                    Notification::new("计算结果已成功导出到 results.xlsx")
+                        .with_type(NotificationType::Success),
+                    cx,
+                );
+            },
+            Err(e) => {
+                window.push_notification(
+                    Notification::new(format!("导出Excel失败: {}", e))
+                        .with_type(NotificationType::Error),
+                    cx,
+                );
+            }
+        }
+    }
+
     fn load_sub_items_for_sheet(
         &self,
         sheet_name: &str, 
@@ -2128,8 +2253,34 @@ impl Focusable for CarbonResultPanel {
 }
 
 impl Render for CarbonResultPanel {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().child(self.table.clone())
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // 检查是否有计算结果
+        let has_results = !self.table.read(cx).delegate().total_rows.is_empty();
+        
+        v_flex()
+            .size_full()
+            .gap_2()
+            .child(div().flex_grow().child(self.table.clone()))
+            .child(
+                h_flex()
+                    .w_full()
+                    .p_2()
+                    .justify_end()
+                    .child(
+                        Button::new("export-excel")
+                            .label("导出Excel")
+                            .with_variant(ButtonVariant::Primary)
+                            .disabled(!has_results)
+                            .on_click({
+                                let this = cx.entity();
+                                move |_, window, ctx| {
+                                    this.update(ctx, |this, ctx| {
+                                        this.export_results_to_excel(window, ctx);
+                                    });
+                                }
+                            })
+                    )
+            )
     }
 }
 

@@ -29,6 +29,7 @@ rusqlite = "0.32.0"
 tokio-rusqlite = "0.6.0"
 rfd = "0.15.2"
 calamine = "0.26.1"
+simple_excel_writer = "0.2.0"
 
 [lints]
 workspace = true
