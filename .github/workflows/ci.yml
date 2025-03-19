@@ -7,6 +7,10 @@ on:
     tags:
       - '*'
 
+# 添加权限设置
+permissions:
+  contents: write
+
 jobs:
   test:
     name: Test

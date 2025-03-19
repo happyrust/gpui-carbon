@@ -9,6 +9,10 @@ on:
     - cron: '0 0 * * *'  # 每天 UTC 0:00 运行
   workflow_dispatch:  # 允许手动触发
 
+# 添加权限设置
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-C target-feature=+crt-static"
